@@ -17,13 +17,18 @@ import {
   Phone,
   MapPin,
   X,
-  Edit3
+  Edit3,
+  PauseCircle,
+  PlayCircle,
+  Clock
 } from 'lucide-react';
 import { TableSelectorModal } from './TableSelectorModal';
 import { PaymentModal } from './PaymentModal';
 import { ReceiptModal } from './ReceiptModal';
 import { KotModal } from './KotModal';
+import { Modal } from '../common/Modal';
 import { Order } from '../../types/pos';
+import { sound } from '../../utils/sound';
 
 export const CartPanel: React.FC = () => {
   const {
@@ -55,6 +60,10 @@ export const CartPanel: React.FC = () => {
     grandTotal,
     createOrder,
     settings,
+    heldOrders,
+    holdCurrentOrder,
+    recallHeldOrder,
+    deleteHeldOrder,
   } = usePos();
 
   // Modals state
@@ -62,6 +71,7 @@ export const CartPanel: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showKotModal, setShowKotModal] = useState(false);
+  const [showHeldModal, setShowHeldModal] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
 
   // Note editing state for individual items

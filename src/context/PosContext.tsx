@@ -19,7 +19,8 @@ import {
   BackupSettings,
   NetworkSettings,
   AppNotification,
-  KitchenTarget
+  KitchenTarget,
+  HeldOrder
 } from '../types/pos';
 import {
   INITIAL_CATEGORIES,
@@ -93,6 +94,12 @@ interface PosContextType {
   cancelOrder: (orderId: string, reason?: string) => void;
   recallOrderToCart: (order: Order) => void;
 
+  // Held Orders
+  heldOrders: HeldOrder[];
+  holdCurrentOrder: (label?: string) => void;
+  recallHeldOrder: (heldId: string) => void;
+  deleteHeldOrder: (heldId: string) => void;
+
   // Tables
   tables: Table[];
   updateTableStatus: (tableId: string, status: 'available' | 'occupied' | 'reserved', orderId?: string, customer?: string) => void;
@@ -162,6 +169,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     { menuItem: INITIAL_MENU_ITEMS[0], quantity: 1, notes: 'Less spicy' },
     { menuItem: INITIAL_MENU_ITEMS[8], quantity: 2 },
   ]);
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
 
   // Inventory & transactions
   const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
@@ -439,6 +447,63 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: `Loaded ${order.orderNumber} back into POS cart.`,
       type: 'info',
     });
+  };
+
+  // Held Orders management
+  const holdCurrentOrder = (label?: string) => {
+    if (cart.length === 0) return;
+    const defaultLabel =
+      orderType === 'dine_in' && selectedTable
+        ? `Table ${selectedTable.number}`
+        : customerName || `Ticket #${heldOrders.length + 1}`;
+
+    const newHeld: HeldOrder = {
+      id: `held-${Date.now()}`,
+      label: label || defaultLabel,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      cart: [...cart],
+      orderType,
+      table: selectedTable,
+      customerName,
+      customerPhone,
+      deliveryAddress,
+      orderNotes,
+      discount,
+      discountType,
+      subtotal,
+    };
+
+    setHeldOrders((prev) => [newHeld, ...prev]);
+    clearCart();
+    addNotification({
+      title: 'Order Put on Hold',
+      message: `${newHeld.label} saved in held queue.`,
+      type: 'info',
+    });
+  };
+
+  const recallHeldOrder = (heldId: string) => {
+    const held = heldOrders.find((h) => h.id === heldId);
+    if (!held) return;
+    setCart([...held.cart]);
+    setOrderType(held.orderType);
+    setSelectedTable(held.table);
+    setCustomerName(held.customerName);
+    setCustomerPhone(held.customerPhone);
+    setDeliveryAddress(held.deliveryAddress);
+    setOrderNotes(held.orderNotes);
+    setDiscount(held.discount);
+    setDiscountType(held.discountType);
+    setHeldOrders((prev) => prev.filter((h) => h.id !== heldId));
+    addNotification({
+      title: 'Order Recalled',
+      message: `Restored ${held.label} back into cart.`,
+      type: 'success',
+    });
+  };
+
+  const deleteHeldOrder = (heldId: string) => {
+    setHeldOrders((prev) => prev.filter((h) => h.id !== heldId));
   };
 
   // Table management
@@ -922,6 +987,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatePaymentStatus,
         cancelOrder,
         recallOrderToCart,
+        heldOrders,
+        holdCurrentOrder,
+        recallHeldOrder,
+        deleteHeldOrder,
         tables,
         updateTableStatus,
         inventory,

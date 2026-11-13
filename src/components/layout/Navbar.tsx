@@ -4,7 +4,6 @@ import {
   Bell,
   Clock,
   Wifi,
-  Cloud,
   ChevronDown,
   LogOut,
   CheckCircle,
@@ -135,9 +134,9 @@ export const Navbar: React.FC = () => {
             <span className="text-slate-300 font-medium">Local: 192.168.1.50</span>
           </div>
           <span className="text-slate-600">|</span>
-          <div className="flex items-center space-x-1 text-sky-400" title="Cloud Database: Synced">
+          <div className="flex items-center space-x-1 text-sky-400" title="Frontend simulation mode">
             <Wifi className="w-3.5 h-3.5" />
-            <span className="text-slate-300 font-medium">Cloud Synced</span>
+            <span className="text-slate-300 font-medium">Demo Mode</span>
           </div>
         </div>
 

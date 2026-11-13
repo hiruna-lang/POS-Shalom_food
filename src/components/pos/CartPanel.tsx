@@ -6,7 +6,6 @@ import {
   Minus,
   Utensils,
   ShoppingBag,
-  Truck,
   CreditCard,
   Banknote,
   Printer,
@@ -15,18 +14,17 @@ import {
   FileText,
   User,
   Phone,
-  MapPin,
   X,
   Edit3,
   PauseCircle,
   PlayCircle,
   Clock
 } from 'lucide-react';
-import { TableSelectorModal } from './TableSelectorModal';
 import { PaymentModal } from './PaymentModal';
 import { ReceiptModal } from './ReceiptModal';
 import { KotModal } from './KotModal';
 import { Modal } from '../common/Modal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { Order } from '../../types/pos';
 import { sound } from '../../utils/sound';
 
@@ -34,14 +32,10 @@ export const CartPanel: React.FC = () => {
   const {
     orderType,
     setOrderType,
-    selectedTable,
-    setSelectedTable,
     customerName,
     setCustomerName,
     customerPhone,
     setCustomerPhone,
-    deliveryAddress,
-    setDeliveryAddress,
     orderNotes,
     setOrderNotes,
     cart,
@@ -59,6 +53,7 @@ export const CartPanel: React.FC = () => {
     serviceChargeAmount,
     grandTotal,
     createOrder,
+    pendingPaymentOrder,
     settings,
     heldOrders,
     holdCurrentOrder,
@@ -67,11 +62,11 @@ export const CartPanel: React.FC = () => {
   } = usePos();
 
   // Modals state
-  const [showTableModal, setShowTableModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showKotModal, setShowKotModal] = useState(false);
   const [showHeldModal, setShowHeldModal] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
 
   // Note editing state for individual items
@@ -96,11 +91,13 @@ export const CartPanel: React.FC = () => {
     setShowReceiptModal(true);
   };
 
+  const paymentTotal = pendingPaymentOrder ? pendingPaymentOrder.total : grandTotal;
+
   return (
     <div className="w-full lg:w-96 xl:w-[420px] bg-white border-l border-slate-200 flex flex-col h-[calc(100vh-4rem)] shadow-lg select-none">
       {/* 1. Order Type Selection Tabs */}
       <div className="p-3 border-b border-slate-200 bg-slate-50">
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-200/80 rounded-xl">
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/80 rounded-xl">
           <button
             type="button"
             onClick={() => setOrderType('dine_in')}
@@ -125,46 +122,10 @@ export const CartPanel: React.FC = () => {
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>Takeaway</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setOrderType('delivery')}
-            className={`flex items-center justify-center space-x-1.5 py-2.5 rounded-lg text-xs font-bold transition-all ${
-              orderType === 'delivery'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Truck className="w-3.5 h-3.5" />
-            <span>Delivery</span>
-          </button>
         </div>
 
-        {/* Dynamic Context Header (Table selector or Delivery info) */}
+        {/* Customer information for takeaway orders */}
         <div className="mt-2.5">
-          {orderType === 'dine_in' && (
-            <div
-              onClick={() => setShowTableModal(true)}
-              className="flex items-center justify-between p-2.5 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200 rounded-xl cursor-pointer transition-colors"
-            >
-              <div className="flex items-center space-x-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
-                  {selectedTable ? selectedTable.number : '?'}
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-800">
-                    {selectedTable ? `Table: ${selectedTable.number}` : 'Select Table'}
-                  </p>
-                  <p className="text-[10px] text-slate-500 capitalize">
-                    {selectedTable ? `${selectedTable.section.replace('_', ' ')} • Capacity ${selectedTable.capacity}` : 'Tap to choose dining table'}
-                  </p>
-                </div>
-              </div>
-              <span className="text-xs font-semibold text-blue-600 hover:underline">
-                Change Table
-              </span>
-            </div>
-          )}
-
           {orderType === 'takeaway' && (
             <div className="grid grid-cols-2 gap-2">
               <div className="relative">
@@ -190,36 +151,6 @@ export const CartPanel: React.FC = () => {
             </div>
           )}
 
-          {orderType === 'delivery' && (
-            <div className="space-y-1.5">
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Customer Name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <input
-                  type="tel"
-                  placeholder="Phone (e.g. +94 77...)"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="relative">
-                <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Delivery Address (Street, City)"
-                  value={deliveryAddress}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -320,7 +251,7 @@ export const CartPanel: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => updateCartQuantity(item.menuItem.id, -1)}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
+                    className="w-11 h-11 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
                     aria-label="Decrease quantity"
                   >
                     <Minus className="w-3.5 h-3.5" />
@@ -331,7 +262,7 @@ export const CartPanel: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => updateCartQuantity(item.menuItem.id, 1)}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
+                    className="w-11 h-11 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
                     aria-label="Increase quantity"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -481,7 +412,7 @@ export const CartPanel: React.FC = () => {
         {/* Primary Payment Button */}
         <button
           type="button"
-          disabled={cart.length === 0}
+          disabled={cart.length === 0 || !!pendingPaymentOrder}
           onClick={() => setShowPaymentModal(true)}
           className="w-full flex items-center justify-center space-x-2 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-extrabold text-sm shadow-lg shadow-blue-600/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
         >
@@ -489,11 +420,22 @@ export const CartPanel: React.FC = () => {
           <span>Pay Now (Rs. {grandTotal.toLocaleString()})</span>
         </button>
 
+        {pendingPaymentOrder && cart.length === 0 && (
+          <button
+            type="button"
+            onClick={() => setShowPaymentModal(true)}
+            className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition-all"
+          >
+            <CreditCard className="w-5 h-5" />
+            <span>Pay Pending Order (Rs. {paymentTotal.toLocaleString()})</span>
+          </button>
+        )}
+
         {cart.length > 0 && (
           <div className="flex justify-between items-center pt-1">
             <button
               type="button"
-              onClick={clearCart}
+              onClick={() => setShowClearConfirm(true)}
               className="text-xs text-rose-500 hover:text-rose-700 font-semibold"
             >
               Clear Cart
@@ -506,17 +448,22 @@ export const CartPanel: React.FC = () => {
       </div>
 
       {/* Modals */}
-      <TableSelectorModal
-        isOpen={showTableModal}
-        onClose={() => setShowTableModal(false)}
-        onSelectTable={(table) => setSelectedTable(table)}
+      <ConfirmDialog
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={clearCart}
+        title="Clear current bill?"
+        message="All items, notes, and discount details will be removed from this bill."
+        confirmText="Clear Bill"
+        variant="danger"
       />
 
       <PaymentModal
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
-        totalAmount={grandTotal}
+        totalAmount={paymentTotal}
         onPaymentSuccess={handlePaymentSuccess}
+        pendingOrder={pendingPaymentOrder}
       />
 
       {lastOrder && (

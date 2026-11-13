@@ -5,7 +5,6 @@ import {
   ShoppingCart,
   ClipboardList,
   Utensils,
-  Package,
   BarChart3,
   Settings,
   HelpCircle
@@ -13,14 +12,10 @@ import {
 import { usePos } from '../../context/PosContext';
 
 export const Sidebar: React.FC = () => {
-  const { cart, orders, inventory } = usePos();
+  const { cart, orders } = usePos();
 
   const pendingOrdersCount = orders.filter(
     (o) => o.orderStatus === 'pending' || o.orderStatus === 'in_kitchen'
-  ).length;
-
-  const lowStockCount = inventory.filter(
-    (i) => i.currentStock <= i.minStockLevel
   ).length;
 
   const navItems = [
@@ -49,13 +44,6 @@ export const Sidebar: React.FC = () => {
       label: 'Menu Management',
       icon: Utensils,
       badge: null,
-    },
-    {
-      to: '/inventory',
-      label: 'Inventory',
-      icon: Package,
-      badge: lowStockCount > 0 ? `${lowStockCount}` : null,
-      badgeColor: 'bg-rose-500 text-white',
     },
     {
       to: '/reports',

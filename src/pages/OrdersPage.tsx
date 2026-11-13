@@ -249,12 +249,14 @@ export const OrdersPage: React.FC = () => {
                           </div>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-2 shrink-0 ${
-                              it.menuItem.kitchen === 'kitchen_1'
+                              (settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
                                 ? 'bg-amber-100 text-amber-800'
                                 : 'bg-cyan-100 text-cyan-800'
                             }`}
                           >
-                            {it.menuItem.kitchen === 'kitchen_1' ? 'Kitchen 1' : 'Kitchen 2'}
+                            {(settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
+                              ? 'Kitchen 1'
+                              : 'Kitchen 2'}
                           </span>
                         </div>
                       ))}

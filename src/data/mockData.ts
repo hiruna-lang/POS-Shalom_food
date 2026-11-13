@@ -655,7 +655,7 @@ export const INITIAL_NOTIFICATIONS: AppNotification[] = [
     message: 'Broiler Chicken (Skinless) is down to 14 kg (Threshold: 20 kg). Reorder suggested.',
     type: 'warning',
     timestamp: '10:15 AM',
-    read: false,
+    read: true,
   },
   {
     id: 'notif-2',
@@ -663,7 +663,7 @@ export const INITIAL_NOTIFICATIONS: AppNotification[] = [
     message: 'Brioche Burger Buns is completely out of stock. Item will show unavailable.',
     type: 'error',
     timestamp: '09:30 AM',
-    read: false,
+    read: true,
   },
   {
     id: 'notif-3',

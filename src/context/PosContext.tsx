@@ -89,6 +89,8 @@ interface PosContextType {
   // Orders
   orders: Order[];
   createOrder: (paymentMethod?: PaymentMethod, amountPaid?: number, sendToKitchen?: boolean) => Order;
+  pendingPaymentOrder: Order | null;
+  completePendingPayment: (method: PaymentMethod, amountPaid: number) => Order | null;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   updatePaymentStatus: (orderId: string, method: PaymentMethod, amountPaid: number) => void;
   cancelOrder: (orderId: string, reason?: string) => void;
@@ -155,6 +157,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Tables & Orders
   const [tables, setTables] = useState<Table[]>(INITIAL_TABLES);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null);
 
   // Cart & POS state
   const [orderType, setOrderType] = useState<OrderType>('dine_in');
@@ -343,6 +346,11 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+    if (!paymentMethod && sendToKitchen) {
+      setPendingPaymentOrder(newOrder);
+    } else if (paymentMethod) {
+      setPendingPaymentOrder(null);
+    }
 
     // If table assigned, mark table as occupied
     if (orderType === 'dine_in' && selectedTable) {
@@ -362,6 +370,30 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDeliveryAddress('');
 
     return newOrder;
+  };
+
+  const completePendingPayment = (method: PaymentMethod, amountPaid: number) => {
+    if (!pendingPaymentOrder) return null;
+
+    const changeDue = amountPaid >= pendingPaymentOrder.total
+      ? amountPaid - pendingPaymentOrder.total
+      : 0;
+    const updatedOrder: Order = {
+      ...pendingPaymentOrder,
+      paymentMethod: method,
+      paymentStatus: 'paid',
+      amountPaid,
+      changeDue,
+    };
+
+    setOrders((prev) => prev.map((order) => (order.id === updatedOrder.id ? updatedOrder : order)));
+    setPendingPaymentOrder(null);
+    addNotification({
+      title: 'Payment Successful',
+      message: `${updatedOrder.orderNumber} paid via ${method.toUpperCase()} for Rs. ${updatedOrder.total.toLocaleString()}.`,
+      type: 'success',
+    });
+    return updatedOrder;
   };
 
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
@@ -914,7 +946,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTimeout(() => {
         addNotification({
           title: 'Printer Test Successful',
-          message: `Test print packet sent to ${printerName}. Connection verified!`,
+          message: `Test ticket simulated for ${printerName}. No physical printer connection was attempted.`,
           type: 'success',
         });
         resolve(true);
@@ -926,9 +958,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return new Promise((resolve) => {
       setTimeout(() => {
         addNotification({
-          title: 'Cash Drawer Kicked',
-          message: `Pulse signal sent via ${settings.cashDrawer.connectedPrinter}. Drawer opened!`,
-          type: 'success',
+          title: 'Cash drawer simulated',
+          message: `Frontend drawer pulse simulated via ${settings.cashDrawer.connectedPrinter}.`,
+          type: 'info',
         });
         resolve(true);
       }, 500);
@@ -983,6 +1015,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         grandTotal,
         orders,
         createOrder,
+        pendingPaymentOrder,
+        completePendingPayment,
         updateOrderStatus,
         updatePaymentStatus,
         cancelOrder,

@@ -33,6 +33,7 @@ export const MenuPage: React.FC = () => {
     addCategory,
     updateCategory,
     deleteCategory,
+    addNotification,
   } = usePos();
 
   // Search & Filter
@@ -131,7 +132,14 @@ export const MenuPage: React.FC = () => {
 
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemName.trim()) return;
+    if (!itemName.trim() || itemPrice <= 0 || itemPrepTime < 0) {
+      addNotification({
+        title: 'Invalid menu item',
+        message: 'Enter a dish name, a price greater than zero, and a valid preparation time.',
+        type: 'warning',
+      });
+      return;
+    }
 
     if (editingItem) {
       updateMenuItem({
@@ -192,7 +200,14 @@ export const MenuPage: React.FC = () => {
 
   const handleSaveCategory = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!catName.trim()) return;
+    if (!catName.trim() || catOrder < 1) {
+      addNotification({
+        title: 'Invalid category',
+        message: 'Enter a category name and a valid display order.',
+        type: 'warning',
+      });
+      return;
+    }
 
     if (editingCategory) {
       updateCategory({

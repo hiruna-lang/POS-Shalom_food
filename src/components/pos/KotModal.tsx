@@ -11,7 +11,7 @@ interface KotModalProps {
 }
 
 export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) => {
-  const { settings, testPrinter } = usePos();
+  const { settings, addNotification } = usePos();
 
   // Filter items by Kitchen target routing
   const kitchen1Items = order.items.filter((item) => {
@@ -25,12 +25,12 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
   });
 
   const handlePrintBoth = () => {
-    if (kitchen1Items.length > 0) {
-      testPrinter(settings.printers.kitchen1.name);
-    }
-    if (kitchen2Items.length > 0) {
-      testPrinter(settings.printers.kitchen2.name);
-    }
+    const ticketCount = Number(kitchen1Items.length > 0) + Number(kitchen2Items.length > 0);
+    addNotification({
+      title: 'Kitchen tickets simulated',
+      message: `${ticketCount} non-empty kitchen ticket${ticketCount === 1 ? '' : 's'} prepared for ${order.orderNumber}.`,
+      type: 'success',
+    });
     onClose();
   };
 
@@ -46,20 +46,20 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center space-x-2">
           <ChefHat className="w-4 h-4 text-amber-600 shrink-0" />
           <span>
-            Tickets are routed automatically through Ethernet LAN to dedicated kitchen printers.
+            Frontend simulation: tickets are routed automatically to the configured kitchen preview.
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Kitchen 1 Ticket Preview */}
-          <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
+          {kitchen1Items.length > 0 && <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 text-center">
               <div className="flex items-center justify-center space-x-1 text-amber-700 font-bold">
                 <Flame className="w-4 h-4" />
                 <span className="uppercase font-sans font-black">KITCHEN 1 (HOT PREP)</span>
               </div>
               <p className="text-[10px] text-slate-500 font-sans">{settings.printers.kitchen1.name}</p>
-              <p className="text-[10px] text-slate-400">LAN IP: {settings.printers.kitchen1.ipAddress}:9100</p>
+              <p className="text-[10px] text-slate-400">Configured target: {settings.printers.kitchen1.ipAddress}:{settings.printers.kitchen1.port}</p>
             </div>
 
             <div className="space-y-0.5 border-b border-dashed border-slate-400 pb-2 text-[11px]">
@@ -106,17 +106,17 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
             <div className="pt-2 border-t border-dashed border-slate-400 text-center text-[10px] text-slate-400">
               -- END OF KITCHEN 1 TICKET --
             </div>
-          </div>
+          </div>}
 
           {/* Kitchen 2 Ticket Preview */}
-          <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
+          {kitchen2Items.length > 0 && <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 text-center">
               <div className="flex items-center justify-center space-x-1 text-cyan-700 font-bold">
                 <Coffee className="w-4 h-4" />
                 <span className="uppercase font-sans font-black">KITCHEN 2 (BEVERAGE/DESSERT)</span>
               </div>
               <p className="text-[10px] text-slate-500 font-sans">{settings.printers.kitchen2.name}</p>
-              <p className="text-[10px] text-slate-400">LAN IP: {settings.printers.kitchen2.ipAddress}:9100</p>
+              <p className="text-[10px] text-slate-400">Configured target: {settings.printers.kitchen2.ipAddress}:{settings.printers.kitchen2.port}</p>
             </div>
 
             <div className="space-y-0.5 border-b border-dashed border-slate-400 pb-2 text-[11px]">
@@ -163,8 +163,14 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
             <div className="pt-2 border-t border-dashed border-slate-400 text-center text-[10px] text-slate-400">
               -- END OF KITCHEN 2 TICKET --
             </div>
-          </div>
+          </div>}
         </div>
+
+        {kitchen1Items.length === 0 && kitchen2Items.length === 0 && (
+          <div className="p-4 text-center text-sm text-slate-500 border border-slate-200 rounded-xl">
+            No kitchen-routed items are present on this order.
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-3 pt-2">
@@ -174,7 +180,7 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
             className="flex-1 flex items-center justify-center space-x-2 py-3.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-extrabold text-sm rounded-xl shadow-md transition-colors"
           >
             <Printer className="w-4 h-4" />
-            <span>Send & Print Tickets to LAN Kitchens</span>
+            <span>Simulate Kitchen Tickets</span>
           </button>
           <button
             type="button"

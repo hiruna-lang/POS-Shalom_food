@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePos } from '../context/PosContext';
 import { Modal } from '../components/common/Modal';
-import { TableSelectorModal } from '../components/pos/TableSelectorModal';
 import { sound } from '../utils/sound';
 import {
   Search,
@@ -19,15 +18,12 @@ export const DashboardPage: React.FC = () => {
     users,
     orders,
     menuItems,
-    inventory,
-    tables,
     currentTime,
     settings,
     addNotification,
   } = usePos();
 
   // Modals state
-  const [showTableModal, setShowTableModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -37,12 +33,6 @@ export const DashboardPage: React.FC = () => {
   const activeKitchenOrdersCount = orders.filter(
     (o) => o.orderStatus === 'pending' || o.orderStatus === 'in_kitchen'
   ).length;
-
-  const lowStockCount = inventory.filter(
-    (i) => i.currentStock <= i.minStockLevel
-  ).length;
-
-  const occupiedTablesCount = tables.filter((t) => t.status === 'occupied').length;
 
   const todayRevenue = orders
     .filter((o) => o.orderStatus === 'completed' || o.paymentStatus === 'paid')
@@ -78,14 +68,8 @@ export const DashboardPage: React.FC = () => {
       case 'menu':
         navigate('/menu');
         break;
-      case 'inventory':
-        navigate('/inventory');
-        break;
       case 'kds':
         navigate('/orders?view=kds');
-        break;
-      case 'tables':
-        setShowTableModal(true);
         break;
       case 'reports':
         navigate('/reports');
@@ -215,7 +199,7 @@ export const DashboardPage: React.FC = () => {
               POS / Billing
             </span>
             <span className="text-[10px] sm:text-xs text-blue-100 mt-0.5 truncate max-w-[90%]">
-              Dine-in, Takeaway & Delivery
+              Dine-in & Takeaway
             </span>
           </button>
 
@@ -245,41 +229,7 @@ export const DashboardPage: React.FC = () => {
             </span>
           </button>
 
-          {/* 3. Inventory / Stock */}
-          <button
-            type="button"
-            onClick={() => handleTileClick('inventory')}
-            className="group bg-[#7081df] hover:bg-[#6273d6] active:bg-[#5667ca] active:scale-[0.99] rounded-2xl p-2 sm:p-3 flex flex-col items-center justify-center shadow-xs hover:shadow-md transition-all cursor-pointer h-full w-full focus:outline-none relative overflow-hidden"
-          >
-            {lowStockCount > 0 ? (
-              <span className="absolute top-2 right-2 text-[9px] sm:text-[10px] font-black px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 shadow-xs animate-pulse">
-                {lowStockCount} Low
-              </span>
-            ) : (
-              <span className="absolute top-2 right-2 text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-xs">
-                {inventory.length} Items
-              </span>
-            )}
-
-            <div className="mb-1 sm:mb-2 group-hover:scale-105 transition-transform">
-              <svg className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 text-white" viewBox="0 0 64 64" fill="currentColor">
-                <rect x="28" y="10" width="8" height="18" rx="2" fill="white" />
-                <rect x="30" y="6" width="4" height="4" rx="1" fill="white" />
-                <circle cx="20" cy="22" r="8" fill="white" />
-                <circle cx="44" cy="22" r="7" fill="white" />
-                <path d="M12 28h40l-5 24H17L12 28z" />
-                <circle cx="32" cy="40" r="3.5" fill="#7081df" />
-              </svg>
-            </div>
-            <span className="text-sm sm:text-base lg:text-lg font-black tracking-wide text-white text-center leading-tight">
-              Inventory / Stock
-            </span>
-            <span className="text-[10px] sm:text-xs text-blue-100 mt-0.5 truncate max-w-[90%]">
-              Ingredients, GRN & Supplies
-            </span>
-          </button>
-
-          {/* 4. Kitchen Display (KDS) */}
+          {/* 3. Orders & Kitchen */}
           <button
             type="button"
             onClick={() => handleTileClick('kds')}
@@ -299,40 +249,14 @@ export const DashboardPage: React.FC = () => {
               </svg>
             </div>
             <span className="text-sm sm:text-base lg:text-lg font-black tracking-wide text-white text-center leading-tight">
-              Kitchen Display (KDS)
+              Orders & Kitchen
             </span>
             <span className="text-[10px] sm:text-xs text-blue-100 mt-0.5 truncate max-w-[90%]">
-              Kitchen 1 (Hot) & 2 (Cold)
+              Live orders and kitchen tickets
             </span>
           </button>
 
-          {/* 5. Dining Tables */}
-          <button
-            type="button"
-            onClick={() => handleTileClick('tables')}
-            className="group bg-[#7081df] hover:bg-[#6273d6] active:bg-[#5667ca] active:scale-[0.99] rounded-2xl p-2 sm:p-3 flex flex-col items-center justify-center shadow-xs hover:shadow-md transition-all cursor-pointer h-full w-full focus:outline-none relative overflow-hidden"
-          >
-            <span className="absolute top-2 right-2 text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-xs">
-              {occupiedTablesCount}/{tables.length} Seated
-            </span>
-
-            <div className="mb-1 sm:mb-2 group-hover:scale-105 transition-transform">
-              <svg className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 text-white" viewBox="0 0 64 64" fill="currentColor">
-                <rect x="18" y="24" width="28" height="8" rx="2" fill="white" />
-                <path d="M22 32v18M42 32v18" stroke="white" strokeWidth="4" strokeLinecap="round" />
-                <path d="M10 20v14M10 34h8M12 34v16" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
-                <path d="M54 20v14M54 34h-8M52 34v16" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
-              </svg>
-            </div>
-            <span className="text-sm sm:text-base lg:text-lg font-black tracking-wide text-white text-center leading-tight">
-              Dining Tables
-            </span>
-            <span className="text-[10px] sm:text-xs text-blue-100 mt-0.5 truncate max-w-[90%]">
-              Indoor, Patio & VIP Lounge
-            </span>
-          </button>
-
-          {/* 6. Reports & Sales */}
+          {/* 5. Reports & Sales */}
           <button
             type="button"
             onClick={() => handleTileClick('reports')}
@@ -452,21 +376,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* ----------------- MODALS ----------------- */}
 
-      {/* 1. Dining Tables Floor Plan Modal */}
-      <TableSelectorModal
-        isOpen={showTableModal}
-        onClose={() => setShowTableModal(false)}
-        onSelectTable={(tbl) => {
-          addNotification({
-            title: `Table ${tbl.number} Selected`,
-            message: `Switched table context to ${tbl.section.toUpperCase()}`,
-            type: 'info',
-          });
-          navigate('/pos');
-        }}
-      />
-
-      {/* 2. Return & Refund Settlement Modal */}
+      {/* 1. Return & Refund Settlement Modal */}
       <Modal
         isOpen={showReturnModal}
         onClose={() => setShowReturnModal(false)}

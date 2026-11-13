@@ -34,9 +34,6 @@ export const SettingsPage: React.FC = () => {
     updatePrinterConfig,
     updateCashDrawerSettings,
     updateKitchenRouting,
-    updateBackupSettings,
-    updateNetworkSettings,
-    triggerManualBackup,
     testPrinter,
     testCashDrawer,
     users,
@@ -152,8 +149,6 @@ export const SettingsPage: React.FC = () => {
     { id: 'printers', label: 'Printers (Bill & Kitchen 1/2)', icon: Printer },
     { id: 'cash_drawer', label: 'Cash Drawer', icon: Coins },
     { id: 'routing', label: 'Kitchen Routing', icon: GitFork },
-    { id: 'backup', label: 'Database Backup', icon: HardDrive },
-    { id: 'network', label: 'Local Server & Cloud Sync', icon: Wifi },
   ];
 
   return (
@@ -503,7 +498,7 @@ export const SettingsPage: React.FC = () => {
                       </h4>
                     </div>
                     <span className="text-[11px] text-amber-800 font-semibold">
-                      Connected via Dedicated Ethernet LAN Cable (Cat6)
+                      Frontend simulation target; no physical printer connection
                     </span>
                   </div>
                   <button
@@ -568,7 +563,7 @@ export const SettingsPage: React.FC = () => {
                       </h4>
                     </div>
                     <span className="text-[11px] text-cyan-800 font-semibold">
-                      Connected via Dedicated Ethernet LAN Cable (Cat6)
+                      Frontend simulation target; no physical printer connection
                     </span>
                   </div>
                   <button
@@ -764,96 +759,6 @@ export const SettingsPage: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 6: Backup Settings */}
-          {activeTab === 'backup' && (
-            <div className="space-y-4">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-base text-slate-900">Database & State Snapshots</h3>
-                <p className="text-xs text-slate-400">
-                  Export complete POS configuration, orders history, inventory, and users as secure offline backup.
-                </p>
-              </div>
-
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    <span className="font-bold text-sm text-emerald-900">System Backup Healthy</span>
-                  </div>
-                  <p className="text-xs text-emerald-700 mt-1">
-                    Last snapshot: {settings.backup.lastBackupTime}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={triggerManualBackup}
-                  className="flex items-center space-x-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Manual Backup Now</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: Network & Sync Settings */}
-          {activeTab === 'network' && (
-            <div className="space-y-4">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-base text-slate-900">
-                  Local Server & Cloud Synchronization
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Local edge POS server operating in Colombo with background cloud replication.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Local Edge Server</span>
-                    <span className="flex items-center space-x-1.5 text-xs font-bold text-emerald-600">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                      <span>Connected</span>
-                    </span>
-                  </div>
-                  <p className="text-sm font-mono font-bold text-slate-900 mt-2">
-                    {settings.network.localServerIp}:{settings.network.localPort}
-                  </p>
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Latency: {settings.network.pingMs} ms (High Speed Local Gigabit LAN)
-                  </span>
-                </div>
-
-                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Shalom Cloud ERP Sync</span>
-                    <span className="text-xs font-bold text-sky-600">Synced</span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-900 mt-2">AWS Colombo Region</p>
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Pending sync items: {settings.network.pendingSyncCount} (0 in queue)
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    addNotification({
-                      title: 'Network Diagnostic Passed',
-                      message: 'Local LAN ping: 12ms. Cloud endpoint HTTPS response: 200 OK.',
-                      type: 'success',
-                    })
-                  }
-                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs"
-                >
-                  Run Network & LAN Diagnostic Ping
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

@@ -2,16 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
 import { FoodCard } from '../components/pos/FoodCard';
 import { CartPanel } from '../components/pos/CartPanel';
-import { Search, Flame, Leaf, Utensils, X, Filter } from 'lucide-react';
+import { Search, Utensils, X } from 'lucide-react';
 
 export const PosPage: React.FC = () => {
   const { menuItems, categories, addToCart } = usePos();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterVegOnly, setFilterVegOnly] = useState<boolean>(false);
-  const [filterSpicyOnly, setFilterSpicyOnly] = useState<boolean>(false);
-
   // Filter visible items
   const visibleMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
@@ -32,29 +29,25 @@ export const PosPage: React.FC = () => {
         return false;
       }
 
-      // Dietary filters
-      if (filterVegOnly && !item.isVegetarian) return false;
-      if (filterSpicyOnly && !item.isSpicy) return false;
-
       return true;
     });
-  }, [menuItems, selectedCategory, searchQuery, filterVegOnly, filterSpicyOnly]);
+  }, [menuItems, selectedCategory, searchQuery]);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 select-none">
       {/* Main Left: Food Catalogue & Filters */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Top Controls: Search Bar & Dietary Filters */}
-        <div className="p-3 bg-white border-b border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+        {/* Simple search for quick cashier lookup */}
+        <div className="p-3 bg-white border-b border-slate-200 shadow-xs flex items-center gap-3 shrink-0">
           {/* Live Search Input */}
           <div className="relative w-full sm:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
             <input
               type="text"
-              placeholder="Search dish, biryani, kottu, drinks..."
+              placeholder="Search food..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-100 focus:bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium transition-colors"
+              className="w-full pl-9 pr-8 py-2.5 min-h-11 text-sm bg-slate-100 focus:bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium transition-colors"
             />
             {searchQuery && (
               <button
@@ -67,37 +60,8 @@ export const PosPage: React.FC = () => {
             )}
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto">
-            <button
-              type="button"
-              onClick={() => setFilterVegOnly(!filterVegOnly)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                filterVegOnly
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <Leaf className="w-3.5 h-3.5" />
-              <span>Veg Only</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterSpicyOnly(!filterSpicyOnly)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                filterSpicyOnly
-                  ? 'bg-rose-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span>Spicy</span>
-            </button>
-
-            <div className="text-xs text-slate-400 font-semibold pl-2 hidden md:block">
-              {visibleMenuItems.length} items
-            </div>
+          <div className="hidden md:block ml-auto text-sm text-slate-500 font-semibold whitespace-nowrap">
+            Tap a food to add
           </div>
         </div>
 
@@ -106,7 +70,7 @@ export const PosPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-4 py-3 min-h-11 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
               selectedCategory === 'all'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -122,7 +86,7 @@ export const PosPage: React.FC = () => {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                className={`px-4 py-3 min-h-11 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
                   selectedCategory === cat.id
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -144,7 +108,7 @@ export const PosPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {visibleMenuItems.map((item) => (
                 <FoodCard
                   key={item.id}

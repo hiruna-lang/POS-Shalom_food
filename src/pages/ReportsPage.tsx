@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { usePos } from '../context/PosContext';
 import {
   BarChart3,
@@ -19,64 +19,100 @@ import {
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
-  const { orders, menuItems, addNotification, settings } = usePos();
+  const { orders, categories, addNotification } = usePos();
 
-  const [dateRange, setDateRange] = useState<'today' | 'weekly' | 'monthly' | 'custom'>('today');
-  const [customStart, setCustomStart] = useState('2026-11-01');
-  const [customEnd, setCustomEnd] = useState('2026-11-11');
+  const [dateRange, setDateRange] = useState<'today' | 'yesterday' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('today');
+  const latestOrderDate = orders.reduce(
+    (latest, order) => (order.createdAt > latest ? order.createdAt : latest),
+    new Date().toISOString()
+  );
+  const [customStart, setCustomStart] = useState(latestOrderDate.slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(latestOrderDate.slice(0, 10));
 
-  // Multiplier simulation for weekly / monthly demo
-  const rangeMultiplier = dateRange === 'today' ? 1 : dateRange === 'weekly' ? 6.8 : dateRange === 'monthly' ? 28.5 : 10.2;
+  const reportData = useMemo(() => {
+    const referenceDate = new Date(latestOrderDate);
+    const start = new Date(referenceDate);
+    const end = new Date(referenceDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
 
-  const validOrders = orders.filter((o) => o.orderStatus !== 'cancelled');
-  const cancelledOrders = orders.filter((o) => o.orderStatus === 'cancelled');
+    if (dateRange === 'yesterday') {
+      start.setDate(start.getDate() - 1);
+      end.setDate(end.getDate() - 1);
+    } else if (dateRange === 'weekly') {
+      start.setDate(start.getDate() - 6);
+    } else if (dateRange === 'monthly') {
+      start.setDate(1);
+    } else if (dateRange === 'yearly') {
+      start.setMonth(0, 1);
+    } else if (dateRange === 'custom') {
+      start.setTime(new Date(`${customStart}T00:00:00`).getTime());
+      end.setTime(new Date(`${customEnd}T23:59:59`).getTime());
+    }
 
-  // Baseline calculations
-  const baseRevenue = validOrders.reduce((sum, o) => sum + o.total, 0);
-  const totalRevenue = Math.round(baseRevenue * rangeMultiplier);
-  const totalOrders = Math.round(validOrders.length * rangeMultiplier);
+    const rangeOrders = orders.filter((order) => {
+      const created = new Date(order.createdAt).getTime();
+      return created >= start.getTime() && created <= end.getTime();
+    });
+    const salesOrders = rangeOrders.filter(
+      (order) => order.orderStatus !== 'cancelled' && order.paymentStatus === 'paid'
+    );
+    const cancelledOrders = rangeOrders.filter((order) => order.orderStatus === 'cancelled');
+    const totalRevenue = salesOrders.reduce((sum, order) => sum + order.total, 0);
+    const totalDiscounts = salesOrders.reduce((sum, order) => sum + order.discount, 0);
+    const paymentTotals = salesOrders.reduce(
+      (totals, order) => {
+        totals[order.paymentMethod || 'cash'] += order.total;
+        return totals;
+      },
+      { cash: 0, card: 0, qr: 0 } as Record<'cash' | 'card' | 'qr', number>
+    );
+
+    const itemTotals = new Map<string, { name: string; category: string; count: number; price: number }>();
+    const categoryTotals = new Map<string, number>();
+    salesOrders.forEach((order) => {
+      order.items.forEach((line) => {
+        const category = categories.find((item) => item.id === line.menuItem.categoryId)?.name || 'Uncategorized';
+        const current = itemTotals.get(line.menuItem.id) || {
+          name: line.menuItem.name,
+          category,
+          count: 0,
+          price: line.menuItem.price,
+        };
+        current.count += line.quantity;
+        itemTotals.set(line.menuItem.id, current);
+        categoryTotals.set(category, (categoryTotals.get(category) || 0) + line.menuItem.price * line.quantity);
+      });
+    });
+
+    const hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      sales: salesOrders
+        .filter((order) => new Date(order.createdAt).getHours() === hour)
+        .reduce((sum, order) => sum + order.total, 0),
+    })).filter((item) => item.sales > 0);
+
+    return {
+      rangeOrders,
+      salesOrders,
+      cancelledOrders,
+      totalRevenue,
+      totalDiscounts,
+      paymentTotals,
+      bestSellers: Array.from(itemTotals.values()).sort((a, b) => b.count - a.count).slice(0, 6),
+      categorySales: Array.from(categoryTotals.entries())
+        .map(([category, sales]) => ({ category, sales }))
+        .sort((a, b) => b.sales - a.sales),
+      hourlyTotals,
+    };
+  }, [orders, categories, dateRange, latestOrderDate, customStart, customEnd]);
+
+  const { rangeOrders, salesOrders, cancelledOrders, totalRevenue, totalDiscounts, paymentTotals, bestSellers, categorySales, hourlyTotals } = reportData;
+  const totalOrders = salesOrders.length;
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-  const totalCancelledCount = Math.round(cancelledOrders.length * rangeMultiplier);
-  const cancelledLoss = Math.round(cancelledOrders.reduce((sum, o) => sum + o.total, 0) * rangeMultiplier);
-
-  // Payment Breakdown
-  const cashTotal = Math.round(totalRevenue * 0.58);
-  const cardTotal = Math.round(totalRevenue * 0.34);
-  const qrTotal = Math.round(totalRevenue * 0.08);
-
-  // Best Selling Items computation
-  const bestSellers = [
-    { name: 'Shalom Special Dum Biryani', category: 'Biryani & Rice', count: Math.round(48 * rangeMultiplier), price: 1850 },
-    { name: 'Chicken Cheese Kottu Roti', category: 'Kottu Specialties', count: Math.round(36 * rangeMultiplier), price: 1650 },
-    { name: 'Fresh Passion Fruit Mojito', category: 'Cold & Hot Drinks', count: Math.round(31 * rangeMultiplier), price: 650 },
-    { name: 'Crispy Hot Butter Cuttlefish', category: 'Appetizers & Bites', count: Math.round(24 * rangeMultiplier), price: 2100 },
-    { name: 'Shalom Double Crispy Burger', category: 'Burgers & Wraps', count: Math.round(19 * rangeMultiplier), price: 1550 },
-    { name: 'Caramelized Watalappam', category: 'Desserts & Sweets', count: Math.round(18 * rangeMultiplier), price: 750 },
-  ];
-
-  // Simulated Hourly Sales Data for Chart
-  const hourlyData = [
-    { hour: '11 AM', sales: 18500 * (rangeMultiplier / 4) },
-    { hour: '12 PM', sales: 46200 * (rangeMultiplier / 4) },
-    { hour: '01 PM', sales: 68400 * (rangeMultiplier / 4) },
-    { hour: '02 PM', sales: 38900 * (rangeMultiplier / 4) },
-    { hour: '04 PM', sales: 21000 * (rangeMultiplier / 4) },
-    { hour: '06 PM', sales: 49500 * (rangeMultiplier / 4) },
-    { hour: '07 PM', sales: 82000 * (rangeMultiplier / 4) },
-    { hour: '08 PM', sales: 94500 * (rangeMultiplier / 4) },
-    { hour: '09 PM', sales: 52000 * (rangeMultiplier / 4) },
-  ];
-
-  const maxHourly = Math.max(...hourlyData.map((d) => d.sales));
-
-  // Category Breakdown Data
-  const categorySales = [
-    { category: 'Biryani & Rice', share: 42, color: 'bg-blue-600' },
-    { category: 'Kottu Specialties', share: 24, color: 'bg-amber-500' },
-    { category: 'Mains & Curries', share: 14, color: 'bg-indigo-500' },
-    { category: 'Drinks & Desserts', share: 12, color: 'bg-cyan-500' },
-    { category: 'Burgers & Appetizers', share: 8, color: 'bg-emerald-500' },
-  ];
+  const totalCancelledCount = cancelledOrders.length;
+  const cancelledLoss = cancelledOrders.reduce((sum, order) => sum + order.total, 0);
+  const maxHourly = Math.max(...hourlyTotals.map((item) => item.sales), 1);
 
   // Excel Export Handler (Generates CSV download)
   const handleExportExcel = () => {
@@ -89,11 +125,13 @@ export const ReportsPage: React.FC = () => {
         [],
         ['Metric', 'Value'],
         ['Total Revenue (LKR)', totalRevenue],
-        ['Total Orders', totalOrders],
+        ['Customer Bills', rangeOrders.length],
+        ['Paid Orders', totalOrders],
         ['Average Order Value (LKR)', avgOrderValue],
-        ['Cash Settlement (LKR)', cashTotal],
-        ['Card Settlement (LKR)', cardTotal],
-        ['QR / Digital (LKR)', qrTotal],
+        ['Cash Settlement (LKR)', paymentTotals.cash],
+        ['Card Settlement (LKR)', paymentTotals.card],
+        ['QR / Digital (LKR)', paymentTotals.qr],
+        ['Discounts (LKR)', totalDiscounts],
         ['Cancelled Orders', totalCancelledCount],
         ['Cancelled Loss (LKR)', cancelledLoss],
         [],
@@ -146,8 +184,10 @@ export const ReportsPage: React.FC = () => {
           <div className="bg-white p-1 rounded-2xl border border-slate-200/90 shadow-xs flex items-center space-x-1">
             {[
               { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
               { id: 'weekly', label: 'This Week' },
               { id: 'monthly', label: 'This Month' },
+              { id: 'yearly', label: 'This Year' },
               { id: 'custom', label: 'Custom' },
             ].map((p) => (
               <button
@@ -285,7 +325,7 @@ export const ReportsPage: React.FC = () => {
 
           {/* Bar Chart Representation */}
           <div className="mt-6 flex items-end justify-between gap-2 h-52 pt-6">
-            {hourlyData.map((d, idx) => {
+            {hourlyTotals.map((d, idx) => {
               const heightPct = Math.round((d.sales / maxHourly) * 100);
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center group relative">
@@ -301,7 +341,9 @@ export const ReportsPage: React.FC = () => {
                     />
                   </div>
                   <span className="text-[10px] font-bold text-slate-500 mt-2 text-center">
-                    {d.hour}
+                    {new Date(2000, 0, 1, d.hour).toLocaleTimeString([], {
+                      hour: 'numeric',
+                    })}
                   </span>
                 </div>
               );
@@ -318,20 +360,24 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             <div className="space-y-4 mt-6">
-              {categorySales.map((cat, idx) => (
+              {categorySales.map((cat, idx) => {
+                const share = totalRevenue > 0 ? Math.round((cat.sales / totalRevenue) * 100) : 0;
+                const colors = ['bg-blue-600', 'bg-amber-500', 'bg-indigo-500', 'bg-cyan-500', 'bg-emerald-500'];
+                return (
                 <div key={idx}>
                   <div className="flex justify-between text-xs font-semibold mb-1">
                     <span className="text-slate-700">{cat.category}</span>
-                    <span className="text-slate-900 font-bold">{cat.share}%</span>
+                    <span className="text-slate-900 font-bold">{share}%</span>
                   </div>
                   <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                     <div
-                      style={{ width: `${cat.share}%` }}
-                      className={`h-full rounded-full ${cat.color}`}
+                      style={{ width: `${share}%` }}
+                      className={`h-full rounded-full ${colors[idx % colors.length]}`}
                     />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -343,17 +389,23 @@ export const ReportsPage: React.FC = () => {
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100">
                 <Banknote className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
-                <span className="font-extrabold text-slate-800">58%</span>
+                <span className="font-extrabold text-slate-800">
+                  {totalRevenue > 0 ? Math.round((paymentTotals.cash / totalRevenue) * 100) : 0}%
+                </span>
                 <span className="text-[10px] text-slate-400 block">Cash</span>
               </div>
               <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-100">
                 <CreditCard className="w-4 h-4 text-blue-600 mx-auto mb-1" />
-                <span className="font-extrabold text-slate-800">34%</span>
+                <span className="font-extrabold text-slate-800">
+                  {totalRevenue > 0 ? Math.round((paymentTotals.card / totalRevenue) * 100) : 0}%
+                </span>
                 <span className="text-[10px] text-slate-400 block">Card</span>
               </div>
               <div className="p-2.5 bg-purple-50 rounded-xl border border-purple-100">
                 <QrCode className="w-4 h-4 text-purple-600 mx-auto mb-1" />
-                <span className="font-extrabold text-slate-800">8%</span>
+                <span className="font-extrabold text-slate-800">
+                  {totalRevenue > 0 ? Math.round((paymentTotals.qr / totalRevenue) * 100) : 0}%
+                </span>
                 <span className="text-[10px] text-slate-400 block">LankaQR</span>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '../common/Modal';
 import { usePos } from '../../context/PosContext';
 import { Banknote, CreditCard, QrCode, CheckCircle2, Delete, ArrowRight } from 'lucide-react';
@@ -9,6 +9,7 @@ interface PaymentModalProps {
   onClose: () => void;
   totalAmount: number;
   onPaymentSuccess: (order: Order) => void;
+  pendingOrder?: Order | null;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -16,13 +17,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   totalAmount,
   onPaymentSuccess,
+  pendingOrder = null,
 }) => {
-  const { createOrder, testCashDrawer } = usePos();
+  const { createOrder, completePendingPayment, addNotification } = usePos();
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [tenderAmount, setTenderAmount] = useState<string>(Math.ceil(totalAmount).toString());
   const [cardType, setCardType] = useState<'visa' | 'mastercard' | 'amex'>('visa');
   const [cardRef, setCardRef] = useState<string>('AUTH-' + Math.floor(100000 + Math.random() * 900000));
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMethod('cash');
+      setTenderAmount(Math.ceil(totalAmount).toString());
+      setIsProcessing(false);
+    }
+  }, [isOpen, totalAmount]);
 
   const numericTender = parseFloat(tenderAmount) || 0;
   const changeDue = Math.max(0, numericTender - totalAmount);
@@ -54,14 +64,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const handleComplete = async () => {
     setIsProcessing(true);
     if (method === 'cash') {
-      // Simulate cash drawer kick
-      testCashDrawer();
+      addNotification({
+        title: 'Cash drawer simulated',
+        message: 'A frontend cash-drawer pulse was simulated for this payment.',
+        type: 'info',
+      });
     }
 
     setTimeout(() => {
-      const newOrder = createOrder(method, numericTender, true);
+      const newOrder = pendingOrder
+        ? completePendingPayment(method, numericTender)
+        : createOrder(method, numericTender, true);
       setIsProcessing(false);
-      onPaymentSuccess(newOrder);
+      if (newOrder) onPaymentSuccess(newOrder);
     }, 600);
   };
 
@@ -259,7 +274,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Card processed via integrated PAX / Verifone wireless terminal.
+                  Frontend simulation only. A real card terminal can be integrated later.
                 </p>
               </div>
             </div>
@@ -291,7 +306,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <span>Authorizing & Recording...</span>
               ) : (
                 <>
-                  <span>Confirm & Print Bill</span>
+                  <span>Confirm Payment & Preview Receipt</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

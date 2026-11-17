@@ -1,10 +1,11 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { PosProvider } from './context/PosContext';
+import { PosProvider, usePos } from './context/PosContext';
 import { Navbar } from './components/layout/Navbar';
 import { ToastContainer } from './components/common/ToastContainer';
 
 // Pages
+import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PosPage } from './pages/PosPage';
 import { OrdersPage } from './pages/OrdersPage';
@@ -14,6 +15,23 @@ import { SettingsPage } from './pages/SettingsPage';
 
 const AppContent: React.FC = () => {
   const location = useLocation();
+  const { isAuthenticated } = usePos();
+
+  // If not authenticated, always display Cashier LoginPage
+  if (!isAuthenticated) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-[#020b18]">
+        <LoginPage />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // If authenticated and attempts to visit /login, redirect to Dashboard
+  if (location.pathname === '/login') {
+    return <Navigate to="/" replace />;
+  }
+
   const isHomePage = location.pathname === '/';
 
   if (isHomePage) {
@@ -30,7 +48,7 @@ const AppContent: React.FC = () => {
       {/* Top Navigation Header with prominent Back to Dashboard button */}
       <Navbar />
 
-      {/* Full-width Main Content Area (Sidebar removed for maximum POS screen workspace) */}
+      {/* Full-width Main Content Area */}
       <main className="flex-1 overflow-y-auto bg-slate-100 relative">
         <Routes>
           <Route path="/pos" element={<PosPage />} />
@@ -52,10 +70,7 @@ export const App: React.FC = () => {
   return (
     <PosProvider>
       <Router>
-        <Routes>
-          <Route path="/" element={<AppContent />} />
-          <Route path="/*" element={<AppContent />} />
-        </Routes>
+        <AppContent />
       </Router>
     </PosProvider>
   );

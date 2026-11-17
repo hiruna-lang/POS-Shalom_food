@@ -24,6 +24,7 @@ export const Navbar: React.FC = () => {
     currentUser,
     setCurrentUser,
     users,
+    logout,
     notifications,
     markNotificationAsRead,
     clearAllNotifications,
@@ -292,8 +293,10 @@ export const Navbar: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
+                    sound.playTap();
                     setShowUserMenu(false);
-                    navigate('/');
+                    logout();
+                    navigate('/login');
                   }}
                   className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 transition-colors"
                 >

@@ -17,6 +17,7 @@ export const DashboardPage: React.FC = () => {
     currentUser,
     setCurrentUser,
     users,
+    logout,
     orders,
     menuItems,
     inventory,
@@ -645,13 +646,10 @@ export const DashboardPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                sound.playSuccess();
+                sound.playDrawerKick();
                 setShowLogoutModal(false);
-                addNotification({
-                  title: 'Terminal Locked',
-                  message: 'Enter 4-digit PIN to resume cashier session.',
-                  type: 'info',
-                });
+                logout();
+                navigate('/login');
               }}
               className="flex-1 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold"
             >

@@ -542,7 +542,7 @@ export const INITIAL_USERS: User[] = [
     email: 'kamal.p@shalomfood.lk',
     username: 'kamal_pos',
     role: 'cashier',
-    pin: '1234',
+    pin: '0000',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
     status: 'active',
     permissions: ['pos_billing', 'view_orders', 'print_bills'],

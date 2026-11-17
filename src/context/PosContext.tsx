@@ -36,6 +36,9 @@ import {
 
 interface PosContextType {
   // Current user & authentication
+  isAuthenticated: boolean;
+  login: (pin: string) => { success: boolean; user?: User; message?: string };
+  logout: () => void;
   currentUser: User;
   setCurrentUser: (user: User) => void;
   users: User[];
@@ -146,7 +149,17 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Users state
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem('pos_is_authenticated') === 'true';
+  });
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const savedId = sessionStorage.getItem('pos_current_user_id');
+    if (savedId) {
+      const found = INITIAL_USERS.find((u) => u.id === savedId);
+      if (found) return found;
+    }
+    return INITIAL_USERS[0];
+  });
 
   // Categories & Menu
   const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
@@ -800,6 +813,53 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const login = (pin: string): { success: boolean; user?: User; message?: string } => {
+    // 0000 is master cashier login requested by user
+    if (pin === '0000') {
+      const cashier = users.find((u) => u.pin === '0000' || u.role === 'cashier') || users[0];
+      setCurrentUser(cashier);
+      setIsAuthenticated(true);
+      sessionStorage.setItem('pos_is_authenticated', 'true');
+      sessionStorage.setItem('pos_current_user_id', cashier.id);
+      addNotification({
+        title: 'Cashier Signed In',
+        message: `Welcome, ${cashier.name}! Terminal unlocked.`,
+        type: 'success',
+      });
+      return { success: true, user: cashier };
+    }
+
+    const matchedUser = users.find((u) => u.pin === pin && u.status === 'active');
+    if (matchedUser) {
+      setCurrentUser(matchedUser);
+      setIsAuthenticated(true);
+      sessionStorage.setItem('pos_is_authenticated', 'true');
+      sessionStorage.setItem('pos_current_user_id', matchedUser.id);
+      addNotification({
+        title: 'User Signed In',
+        message: `Welcome, ${matchedUser.name}! Terminal unlocked.`,
+        type: 'success',
+      });
+      return { success: true, user: matchedUser };
+    }
+
+    return {
+      success: false,
+      message: 'Invalid PIN. Please enter 0000 to sign in.',
+    };
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    sessionStorage.removeItem('pos_is_authenticated');
+    sessionStorage.removeItem('pos_current_user_id');
+    addNotification({
+      title: 'Terminal Locked',
+      message: 'Cashier signed out. Please enter PIN to access POS.',
+      type: 'info',
+    });
+  };
+
   // Settings updates
   const updateGeneralSettings = (data: Partial<GeneralSettings>) => {
     setSettings((prev) => ({
@@ -938,6 +998,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <PosContext.Provider
       value={{
+        isAuthenticated,
+        login,
+        logout,
         currentUser,
         setCurrentUser,
         users,

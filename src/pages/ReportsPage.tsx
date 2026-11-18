@@ -1,3 +1,4 @@
+import { isPaidSale } from '../utils/billing';
 import React, { useMemo, useState } from 'react';
 import { usePos } from '../context/PosContext';
 import {
@@ -19,44 +20,27 @@ import {
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
-  const { orders, categories, addNotification } = usePos();
+  const { orders, categories, addNotification, currentTime } = usePos();
 
   const [dateRange, setDateRange] = useState<'today' | 'yesterday' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('today');
-  const latestOrderDate = orders.reduce(
-    (latest, order) => (order.createdAt > latest ? order.createdAt : latest),
-    new Date().toISOString()
-  );
-  const [customStart, setCustomStart] = useState(latestOrderDate.slice(0, 10));
-  const [customEnd, setCustomEnd] = useState(latestOrderDate.slice(0, 10));
+  const localDate = (date: Date) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Colombo' }).format(date);
+  const today = localDate(currentTime);
+  const [customStart, setCustomStart] = useState(today);
+  const [customEnd, setCustomEnd] = useState(today);
 
   const reportData = useMemo(() => {
-    const referenceDate = new Date(latestOrderDate);
-    const start = new Date(referenceDate);
-    const end = new Date(referenceDate);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
-
-    if (dateRange === 'yesterday') {
-      start.setDate(start.getDate() - 1);
-      end.setDate(end.getDate() - 1);
-    } else if (dateRange === 'weekly') {
-      start.setDate(start.getDate() - 6);
-    } else if (dateRange === 'monthly') {
-      start.setDate(1);
-    } else if (dateRange === 'yearly') {
-      start.setMonth(0, 1);
-    } else if (dateRange === 'custom') {
-      start.setTime(new Date(`${customStart}T00:00:00`).getTime());
-      end.setTime(new Date(`${customEnd}T23:59:59`).getTime());
-    }
-
+    const start = new Date(`${today}T00:00:00Z`);
+    if (dateRange === 'yesterday') start.setUTCDate(start.getUTCDate() - 1);
+    if (dateRange === 'weekly') start.setUTCDate(start.getUTCDate() - 6);
+    if (dateRange === 'monthly') start.setUTCDate(1);
+    if (dateRange === 'yearly') start.setUTCMonth(0, 1);
+    const firstDay = dateRange === 'custom' ? customStart : start.toISOString().slice(0, 10);
+    const lastDay = dateRange === 'custom' ? customEnd : dateRange === 'yesterday' ? firstDay : today;
     const rangeOrders = orders.filter((order) => {
-      const created = new Date(order.createdAt).getTime();
-      return created >= start.getTime() && created <= end.getTime();
+      const created = localDate(new Date(order.createdAt));
+      return created >= firstDay && created <= lastDay;
     });
-    const salesOrders = rangeOrders.filter(
-      (order) => order.orderStatus !== 'cancelled' && order.paymentStatus === 'paid'
-    );
+    const salesOrders = rangeOrders.filter(isPaidSale);
     const cancelledOrders = rangeOrders.filter((order) => order.orderStatus === 'cancelled');
     const totalRevenue = salesOrders.reduce((sum, order) => sum + order.total, 0);
     const totalDiscounts = salesOrders.reduce((sum, order) => sum + order.discount, 0);
@@ -68,7 +52,7 @@ export const ReportsPage: React.FC = () => {
       { cash: 0, card: 0, qr: 0 } as Record<'cash' | 'card' | 'qr', number>
     );
 
-    const itemTotals = new Map<string, { name: string; category: string; count: number; price: number }>();
+    const itemTotals = new Map<string, { name: string; category: string; count: number; revenue: number }>();
     const categoryTotals = new Map<string, number>();
     salesOrders.forEach((order) => {
       order.items.forEach((line) => {
@@ -77,9 +61,10 @@ export const ReportsPage: React.FC = () => {
           name: line.menuItem.name,
           category,
           count: 0,
-          price: line.menuItem.price,
+          revenue: 0,
         };
         current.count += line.quantity;
+        current.revenue += line.quantity * line.menuItem.price;
         itemTotals.set(line.menuItem.id, current);
         categoryTotals.set(category, (categoryTotals.get(category) || 0) + line.menuItem.price * line.quantity);
       });
@@ -88,7 +73,7 @@ export const ReportsPage: React.FC = () => {
     const hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({
       hour,
       sales: salesOrders
-        .filter((order) => new Date(order.createdAt).getHours() === hour)
+        .filter((order) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', hour: '2-digit', hourCycle: 'h23' }).format(new Date(order.createdAt))) === hour)
         .reduce((sum, order) => sum + order.total, 0),
     })).filter((item) => item.sales > 0);
 
@@ -105,19 +90,19 @@ export const ReportsPage: React.FC = () => {
         .sort((a, b) => b.sales - a.sales),
       hourlyTotals,
     };
-  }, [orders, categories, dateRange, latestOrderDate, customStart, customEnd]);
+  }, [orders, categories, dateRange, today, customStart, customEnd]);
 
   const { rangeOrders, salesOrders, cancelledOrders, totalRevenue, totalDiscounts, paymentTotals, bestSellers, categorySales, hourlyTotals } = reportData;
   const totalOrders = salesOrders.length;
-  const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+  const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue * 100 / totalOrders) / 100 : 0;
   const totalCancelledCount = cancelledOrders.length;
   const cancelledLoss = cancelledOrders.reduce((sum, order) => sum + order.total, 0);
+  const itemSales = categorySales.reduce((sum, category) => sum + category.sales, 0);
   const maxHourly = Math.max(...hourlyTotals.map((item) => item.sales), 1);
 
   // Excel Export Handler (Generates CSV download)
   const handleExportExcel = () => {
     const csvContent =
-      'data:text/csv;charset=utf-8,' +
       [
         ['Shalom Food Restaurant - Sales Performance Report'],
         ['Period', dateRange.toUpperCase()],
@@ -136,18 +121,23 @@ export const ReportsPage: React.FC = () => {
         ['Cancelled Loss (LKR)', cancelledLoss],
         [],
         ['Top Dish', 'Category', 'Quantity Sold', 'Gross Revenue (LKR)'],
-        ...bestSellers.map((b) => [b.name, b.category, b.count, b.count * b.price]),
+        ...bestSellers.map((b) => [b.name, b.category, b.count, b.revenue]),
       ]
-        .map((e) => e.join(','))
+        .map((row) => row.map((cell) => {
+          const value = String(cell);
+          const safe = typeof cell === 'string' && /^[=+@\-\t\r]/.test(value) ? "'" + value : value;
+          return '"' + safe.replace(/"/g, '""') + '"';
+        }).join(','))
         .join('\n');
 
-    const encodedUri = encodeURI(csvContent);
+    const url = URL.createObjectURL(new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', `Shalom_Sales_Report_${dateRange}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     addNotification({
       title: 'Excel Report Exported',
@@ -167,7 +157,7 @@ export const ReportsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div id="printable-report" className="module-page space-y-4">
       {/* 1. Header & Period Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -361,7 +351,7 @@ export const ReportsPage: React.FC = () => {
 
             <div className="space-y-4 mt-6">
               {categorySales.map((cat, idx) => {
-                const share = totalRevenue > 0 ? Math.round((cat.sales / totalRevenue) * 100) : 0;
+                const share = itemSales > 0 ? Math.round((cat.sales / itemSales) * 100) : 0;
                 const colors = ['bg-blue-600', 'bg-amber-500', 'bg-indigo-500', 'bg-cyan-500', 'bg-emerald-500'];
                 return (
                 <div key={idx}>
@@ -432,7 +422,7 @@ export const ReportsPage: React.FC = () => {
                 <th className="py-3 px-4">Rank</th>
                 <th className="py-3 px-4">Dish Title</th>
                 <th className="py-3 px-4">Category</th>
-                <th className="py-3 px-4">Unit Price (LKR)</th>
+                <th className="py-3 px-4">Average Unit Price (LKR)</th>
                 <th className="py-3 px-4">Units Sold</th>
                 <th className="py-3 px-4">Gross Revenue (LKR)</th>
                 <th className="py-3 px-4">Sales Share</th>
@@ -440,8 +430,8 @@ export const ReportsPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {bestSellers.map((item, idx) => {
-                const itemRevenue = item.count * item.price;
-                const sharePct = Math.round((itemRevenue / totalRevenue) * 100);
+                const itemRevenue = item.revenue;
+                const sharePct = itemSales ? Math.round((itemRevenue / itemSales) * 100) : 0;
 
                 return (
                   <tr key={idx} className="hover:bg-slate-50 transition-colors">
@@ -462,7 +452,7 @@ export const ReportsPage: React.FC = () => {
                     </td>
                     <td className="py-3.5 px-4 font-bold text-slate-900">{item.name}</td>
                     <td className="py-3.5 px-4 font-semibold text-slate-600">{item.category}</td>
-                    <td className="py-3.5 px-4 font-mono">Rs. {item.price.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 font-mono">Rs. {(item.revenue / item.count).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                     <td className="py-3.5 px-4 font-extrabold text-blue-700">{item.count} orders</td>
                     <td className="py-3.5 px-4 font-black text-slate-900">
                       Rs. {itemRevenue.toLocaleString()}

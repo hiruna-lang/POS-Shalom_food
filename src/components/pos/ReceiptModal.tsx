@@ -90,7 +90,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               {order.items.map((item, idx) => (
                 <div key={idx}>
                   <div className="flex justify-between text-[11px]">
-                    <span className="w-1/2 truncate font-medium">{item.menuItem.name}</span>
+                    <span className="w-1/2 truncate font-medium">{item.menuItem.name}{item.portion && ` / ${item.portion}`}</span>
                     <span className="w-1/6 text-center">{item.quantity}</span>
                     <span className="w-1/3 text-right">
                       {(item.menuItem.price * item.quantity).toFixed(2)}

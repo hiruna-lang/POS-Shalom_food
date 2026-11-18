@@ -11,28 +11,18 @@ interface KotModalProps {
 }
 
 export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) => {
-  const { settings, addNotification } = usePos();
+  const { settings } = usePos();
 
   // Filter items by Kitchen target routing
   const kitchen1Items = order.items.filter((item) => {
-    const routing = settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
+    const routing = item.kitchenTarget || settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
     return routing === 'kitchen_1';
   });
 
   const kitchen2Items = order.items.filter((item) => {
-    const routing = settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
+    const routing = item.kitchenTarget || settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
     return routing === 'kitchen_2';
   });
-
-  const handlePrintBoth = () => {
-    const ticketCount = Number(kitchen1Items.length > 0) + Number(kitchen2Items.length > 0);
-    addNotification({
-      title: 'Kitchen tickets simulated',
-      message: `${ticketCount} non-empty kitchen ticket${ticketCount === 1 ? '' : 's'} prepared for ${order.orderNumber}.`,
-      type: 'success',
-    });
-    onClose();
-  };
 
   return (
     <Modal
@@ -46,13 +36,13 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center space-x-2">
           <ChefHat className="w-4 h-4 text-amber-600 shrink-0" />
           <span>
-            Frontend simulation: tickets are routed automatically to the configured kitchen preview.
+            Tickets are grouped by kitchen station. Use the browser print dialog to choose an available printer.
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div id="printable-kot" className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Kitchen 1 Ticket Preview */}
-          {kitchen1Items.length > 0 && <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
+          {kitchen1Items.length > 0 && <div className="kitchen-print-ticket border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 text-center">
               <div className="flex items-center justify-center space-x-1 text-amber-700 font-bold">
                 <Flame className="w-4 h-4" />
@@ -90,7 +80,7 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
                 kitchen1Items.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-start text-xs font-bold">
                     <span className="w-4/5">
-                      {item.menuItem.name}
+                      {item.menuItem.name}{item.portion && ` / ${item.portion}`}
                       {item.notes && (
                         <span className="block text-[10px] font-normal text-rose-600">
                           NOTE: {item.notes}
@@ -109,7 +99,7 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
           </div>}
 
           {/* Kitchen 2 Ticket Preview */}
-          {kitchen2Items.length > 0 && <div className="border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
+          {kitchen2Items.length > 0 && <div className="kitchen-print-ticket border border-slate-300 rounded-xl p-4 bg-white shadow-xs font-mono text-xs text-slate-800">
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 text-center">
               <div className="flex items-center justify-center space-x-1 text-cyan-700 font-bold">
                 <Coffee className="w-4 h-4" />
@@ -147,7 +137,7 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
                 kitchen2Items.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-start text-xs font-bold">
                     <span className="w-4/5">
-                      {item.menuItem.name}
+                      {item.menuItem.name}{item.portion && ` / ${item.portion}`}
                       {item.notes && (
                         <span className="block text-[10px] font-normal text-rose-600">
                           NOTE: {item.notes}
@@ -176,11 +166,12 @@ export const KotModal: React.FC<KotModalProps> = ({ isOpen, onClose, order }) =>
         <div className="flex items-center space-x-3 pt-2">
           <button
             type="button"
-            onClick={handlePrintBoth}
+            onClick={() => window.print()}
+            disabled={order.items.length === 0}
             className="flex-1 flex items-center justify-center space-x-2 py-3.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-extrabold text-sm rounded-xl shadow-md transition-colors"
           >
             <Printer className="w-4 h-4" />
-            <span>Simulate Kitchen Tickets</span>
+            <span>Print kitchen tickets</span>
           </button>
           <button
             type="button"

@@ -29,13 +29,14 @@ import { sound } from '../utils/sound';
 
 export const OrdersPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialView = searchParams.get('view') === 'kds' ? 'kds' : 'table';
-  const [viewMode, setViewMode] = useState<'table' | 'kds'>(initialView);
+  const viewMode = searchParams.get('view') === 'kds' ? 'kds' : 'table';
 
   const {
     orders,
     updateOrderStatus,
-    updatePaymentStatus,
+    advanceKitchenStation,
+    currentTime,
+    currentUser,
     cancelOrder,
     settings,
   } = usePos();
@@ -75,7 +76,7 @@ export const OrdersPage: React.FC = () => {
   const activeKdsOrders = useMemo(() => {
     return orders.filter(
       (o) => o.orderStatus === 'pending' || o.orderStatus === 'in_kitchen'
-    );
+    ).sort((first, second) => Date.parse(first.createdAt) - Date.parse(second.createdAt));
   }, [orders]);
 
   const getStatusBadge = (status: OrderStatus) => {
@@ -95,7 +96,7 @@ export const OrdersPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto select-none font-sans">
+    <div className="module-page space-y-4">
       {/* Header with View Mode Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -116,7 +117,6 @@ export const OrdersPage: React.FC = () => {
               type="button"
               onClick={() => {
                 sound.playTap();
-                setViewMode('table');
                 setSearchParams({});
               }}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors ${
@@ -130,7 +130,6 @@ export const OrdersPage: React.FC = () => {
               type="button"
               onClick={() => {
                 sound.playTap();
-                setViewMode('kds');
                 setSearchParams({ view: 'kds' });
               }}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-colors ${
@@ -186,7 +185,7 @@ export const OrdersPage: React.FC = () => {
 
           {/* KDS Kitchen Ticket Cards Grid */}
           {activeKdsOrders.length === 0 ? (
-            <div className="py-20 text-center bg-white rounded-3xl border border-slate-200">
+            <div className="py-20 text-center bg-white rounded-xl border border-slate-200">
               <ChefHat className="w-16 h-16 mx-auto text-slate-300 mb-2" />
               <h3 className="text-lg font-bold text-slate-700">Kitchen Display Queue Clear</h3>
               <p className="text-xs text-slate-400">All incoming restaurant orders have been prepared and served.</p>
@@ -197,7 +196,7 @@ export const OrdersPage: React.FC = () => {
                 // Filter items for selected kitchen
                 const itemsToShow = order.items.filter((item) => {
                   if (kdsFilter === 'all') return true;
-                  const target = settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
+                  const target = item.kitchenTarget || settings.kitchenRouting[item.menuItem.categoryId] || item.menuItem.kitchen;
                   return target === kdsFilter;
                 });
 
@@ -206,7 +205,7 @@ export const OrdersPage: React.FC = () => {
                 return (
                   <div
                     key={order.id}
-                    className="bg-white rounded-3xl border-2 border-slate-300 shadow-md flex flex-col justify-between overflow-hidden"
+                    className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden"
                   >
                     {/* Ticket Header */}
                     <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
@@ -225,7 +224,7 @@ export const OrdersPage: React.FC = () => {
                       <div className="text-right">
                         <span className="text-xs font-mono font-bold text-amber-400 flex items-center space-x-1">
                           <Clock className="w-3.5 h-3.5" />
-                          <span>12m ago</span>
+                          <span>{Math.max(0, Math.floor((currentTime.getTime() - Date.parse(order.createdAt)) / 60000))}m ago</span>
                         </span>
                         <span className="text-[10px] text-slate-400 block mt-0.5">
                           {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -239,7 +238,7 @@ export const OrdersPage: React.FC = () => {
                         <div key={idx} className="pt-2 first:pt-0 flex items-start justify-between">
                           <div>
                             <span className="text-sm font-black text-slate-900">
-                              {it.quantity}x {it.menuItem.name}
+                              {it.quantity}x {it.menuItem.name}{it.portion && ` / ${it.portion}`}
                             </span>
                             {it.notes && (
                               <p className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded mt-0.5">
@@ -249,12 +248,12 @@ export const OrdersPage: React.FC = () => {
                           </div>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-2 shrink-0 ${
-                              (settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
+                              (it.kitchenTarget || settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
                                 ? 'bg-amber-100 text-amber-800'
                                 : 'bg-cyan-100 text-cyan-800'
                             }`}
                           >
-                            {(settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
+                            {(it.kitchenTarget || settings.kitchenRouting[it.menuItem.categoryId] || it.menuItem.kitchen) === 'kitchen_1'
                               ? 'Kitchen 1'
                               : 'Kitchen 2'}
                           </span>
@@ -274,17 +273,14 @@ export const OrdersPage: React.FC = () => {
                       >
                         Reprint KOT
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          sound.playSuccess();
-                          updateOrderStatus(order.id, 'ready');
-                        }}
-                        className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-colors flex items-center justify-center space-x-1"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span>Bump (Ready)</span>
-                      </button>
+                      {(['kitchen_1', 'kitchen_2'] as const).filter((station) => kdsFilter === 'all' || kdsFilter === station).map((station) => {
+                        const status = order.kitchenStatus[station === 'kitchen_1' ? 'kitchen1' : 'kitchen2'];
+                        if (status === 'na') return null;
+                        const label = station === 'kitchen_1' ? 'Hot' : 'Cold';
+                        return <button key={station} type="button" className="secondary-action" disabled={status === 'ready'} onClick={() => advanceKitchenStation(order.id, station)}>
+                          {label} / {status === 'sent' ? 'Start' : status === 'preparing' ? 'Mark ready' : 'Ready'}
+                        </button>;
+                      })}
                     </div>
                   </div>
                 );
@@ -334,7 +330,7 @@ export const OrdersPage: React.FC = () => {
           </div>
 
           {/* Orders Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-200">
@@ -426,10 +422,10 @@ export const OrdersPage: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                   sound.playSuccess();
-                                  updateOrderStatus(order.id, 'ready');
+                                  setSearchParams({ view: 'kds' });
                                 }}
                                 className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors"
-                                title="Mark Order as Ready"
+                                title="Open kitchen display"
                               >
                                 <CheckCircle className="w-4 h-4" />
                               </button>
@@ -473,7 +469,7 @@ export const OrdersPage: React.FC = () => {
                               <ChefHat className="w-4 h-4" />
                             </button>
 
-                            {order.orderStatus !== 'completed' && order.orderStatus !== 'cancelled' && (
+                            {order.orderStatus !== 'cancelled' && (order.paymentStatus !== 'paid' || currentUser.role !== 'cashier') && (
                               <button
                                 type="button"
                                 onClick={() => setCancelTargetOrder(order)}
@@ -516,9 +512,9 @@ export const OrdersPage: React.FC = () => {
         <ConfirmDialog
           isOpen={!!cancelTargetOrder}
           onClose={() => setCancelTargetOrder(null)}
-          onConfirm={() => cancelOrder(cancelTargetOrder.id, 'Voided by cashier')}
+          onConfirm={() => cancelOrder(cancelTargetOrder.id, `Voided by ${currentUser.name}`)}
           title={`Cancel Order ${cancelTargetOrder.orderNumber}?`}
-          message="Are you sure you want to cancel this order? If assigned to a table, the table will be freed."
+          message={cancelTargetOrder.paymentStatus === 'paid' ? 'Only void a paid sale after any external refund has been settled. This records the void in the POS.' : 'This cancels the order and releases its table.'}
           confirmText="Yes, Cancel Order"
           variant="danger"
         />

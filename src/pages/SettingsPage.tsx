@@ -1,3 +1,4 @@
+import { savePreferences, usePreferences } from '../utils/preferences';
 import React, { useState } from 'react';
 import { usePos } from '../context/PosContext';
 import { User, UserRole, KitchenTarget } from '../types/pos';
@@ -27,13 +28,15 @@ import {
 import { Modal } from '../components/common/Modal';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
 
-export const SettingsPage: React.FC = () => {
+export const SettingsPage: React.FC<{ initialTab?: 'users' }> = ({ initialTab }) => {
+  const preferences = usePreferences();
   const {
     settings,
     updateGeneralSettings,
     updatePrinterConfig,
     updateCashDrawerSettings,
     updateKitchenRouting,
+    updateNetworkSettings,
     testPrinter,
     testCashDrawer,
     users,
@@ -45,8 +48,8 @@ export const SettingsPage: React.FC = () => {
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<
-    'general' | 'users' | 'printers' | 'cash_drawer' | 'routing' | 'backup' | 'network'
-  >('general');
+    'general' | 'users' | 'printers' | 'cash_drawer' | 'routing' | 'backup' | 'network' | 'interface'
+  >(initialTab ?? 'general');
 
   // General Settings local edit state
   const [generalForm, setGeneralForm] = useState(settings.general);
@@ -55,6 +58,8 @@ export const SettingsPage: React.FC = () => {
   const [billPrinter, setBillPrinter] = useState(settings.printers.customerBill);
   const [kitchen1Printer, setKitchen1Printer] = useState(settings.printers.kitchen1);
   const [kitchen2Printer, setKitchen2Printer] = useState(settings.printers.kitchen2);
+
+  const [networkConfig, setNetworkConfig] = useState(settings.network);
 
   // Cash Drawer local edit state
   const [drawerConfig, setDrawerConfig] = useState(settings.cashDrawer);
@@ -70,7 +75,7 @@ export const SettingsPage: React.FC = () => {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState<UserRole>('cashier');
-  const [userPin, setUserPin] = useState('1234');
+  const [userPin, setUserPin] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
 
   const openUserModal = (user?: User) => {
@@ -79,14 +84,14 @@ export const SettingsPage: React.FC = () => {
       setUserName(user.name);
       setUserEmail(user.email);
       setUserRole(user.role);
-      setUserPin(user.pin);
+      setUserPin('');
       setUserAvatar(user.avatar);
     } else {
       setEditingUser(null);
       setUserName('');
       setUserEmail('');
       setUserRole('cashier');
-      setUserPin('1234');
+      setUserPin('');
       setUserAvatar('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80');
     }
     setUserModalOpen(true);
@@ -95,6 +100,10 @@ export const SettingsPage: React.FC = () => {
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!userName.trim()) return;
+    if ((!editingUser || userPin) && (!/^\d{4}$/.test(userPin) || users.some((user) => user.id !== editingUser?.id && user.pin === userPin))) {
+      addNotification({ title: 'Choose a unique four-digit PIN', message: 'Each staff member needs their own PIN.', type: 'warning' });
+      return;
+    }
 
     if (editingUser) {
       updateUser({
@@ -102,7 +111,7 @@ export const SettingsPage: React.FC = () => {
         name: userName,
         email: userEmail,
         role: userRole,
-        pin: userPin,
+        pin: userPin || editingUser.pin,
         avatar: userAvatar,
       });
     } else {
@@ -144,27 +153,29 @@ export const SettingsPage: React.FC = () => {
   };
 
   const tabs = [
+    { id: 'interface', label: 'Interface', icon: Sparkles },
     { id: 'general', label: 'General & Restaurant Info', icon: Store },
     { id: 'users', label: 'User & Staff Accounts', icon: Users },
     { id: 'printers', label: 'Printers (Bill & Kitchen 1/2)', icon: Printer },
     { id: 'cash_drawer', label: 'Cash Drawer', icon: Coins },
     { id: 'routing', label: 'Kitchen Routing', icon: GitFork },
+    { id: 'network', label: 'Network', icon: Network },
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div className="module-page space-y-4">
       {/* 1. Header */}
       <div>
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight">System Settings</h2>
+        <h2 className="text-2xl font-black text-slate-900 tracking-tight">{initialTab === 'users' ? 'Staff & Cashiers' : 'System Settings'}</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Hardware configurations, Ethernet LAN printers, user roles, routing matrix and cloud sync.
+          {initialTab === 'users' ? 'Manage staff accounts and role access.' : 'Manage terminal preferences, staff and device settings.'}
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Navigation Sidebar Tabs */}
-        <div className="lg:col-span-3 bg-white p-2 rounded-3xl border border-slate-200/90 shadow-xs space-y-1">
-          {tabs.map((tab) => {
+        <div className="lg:col-span-3 bg-white p-2 rounded-xl border border-slate-200/90 shadow-xs space-y-1">
+          {tabs.filter((tab) => !initialTab || tab.id === initialTab).map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -188,6 +199,45 @@ export const SettingsPage: React.FC = () => {
         {/* Tab Content Panel */}
         <div className="lg:col-span-9 bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs">
           {/* TAB 1: General Settings */}
+          {activeTab === 'network' && (
+            <form className="max-w-xl space-y-3" onSubmit={(event) => {
+              event.preventDefault();
+              updateNetworkSettings({ localServerIp: networkConfig.localServerIp.trim(), localPort: networkConfig.localPort });
+              addNotification({ title: 'Network settings saved', message: 'The terminal address was stored on this device.', type: 'success' });
+            }}>
+              <h3 className="text-lg font-bold">Local network</h3>
+              <p className="text-sm text-slate-600">This browser terminal stores the address for reference. Live connections require a server integration.</p>
+              <label className="grid gap-1 text-sm font-semibold">Server address
+                <input required className="min-h-11 rounded-lg border px-3" value={networkConfig.localServerIp} onChange={(event) => setNetworkConfig({ ...networkConfig, localServerIp: event.target.value })} />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">Port
+                <input required type="number" min={1} max={65535} className="min-h-11 rounded-lg border px-3" value={networkConfig.localPort} onChange={(event) => setNetworkConfig({ ...networkConfig, localPort: Number(event.target.value) })} />
+              </label>
+              <button type="submit" className="primary-action">Save network settings</button>
+            </form>
+          )}
+          {activeTab === 'interface' && (
+            <section className="max-w-xl space-y-3">
+              <h3 className="text-lg font-bold">Terminal appearance</h3>
+              {([
+                ['cartLeft', 'Place the order panel on the left'],
+                ['animations', 'Animate items added to the cart'],
+                ['reducedMotion', 'Reduce interface motion'],
+                ['compact', 'Use compact display density'],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border px-3">
+                  {label}
+                  <input type="checkbox" checked={preferences[key]} onChange={(event) => savePreferences({ ...preferences, [key]: event.target.checked })} />
+                </label>
+              ))}
+              <label className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border px-3">
+                Cashier start screen
+                <select value={preferences.cashierHome} onChange={(event) => savePreferences({ ...preferences, cashierHome: event.target.value === 'dashboard' ? 'dashboard' : 'pos' })}>
+                  <option value="pos">POS / Billing</option><option value="dashboard">Dashboard</option>
+                </select>
+              </label>
+            </section>
+          )}
           {activeTab === 'general' && (
             <form onSubmit={handleSaveGeneral} className="space-y-4">
               <div className="border-b border-slate-100 pb-3">
@@ -617,6 +667,10 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
 
+              <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={!!billPrinter.autoPrint} onChange={(event) => setBillPrinter({ ...billPrinter, autoPrint: event.target.checked })} />
+                Open the browser print dialog after payment
+              </label>
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"

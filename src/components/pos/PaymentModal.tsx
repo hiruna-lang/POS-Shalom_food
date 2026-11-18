@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from '../common/Modal';
 import { usePos } from '../../context/PosContext';
 import { Banknote, CreditCard, QrCode, CheckCircle2, Delete, ArrowRight } from 'lucide-react';
@@ -19,23 +19,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onPaymentSuccess,
   pendingOrder = null,
 }) => {
-  const { createOrder, completePendingPayment, addNotification } = usePos();
+  const { createOrder, completePendingPayment, addNotification, settings } = usePos();
   const [method, setMethod] = useState<PaymentMethod>('cash');
-  const [tenderAmount, setTenderAmount] = useState<string>(Math.ceil(totalAmount).toString());
+  const [tenderAmount, setTenderAmount] = useState<string>(totalAmount.toFixed(2));
   const [cardType, setCardType] = useState<'visa' | 'mastercard' | 'amex'>('visa');
-  const [cardRef, setCardRef] = useState<string>('AUTH-' + Math.floor(100000 + Math.random() * 900000));
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [cardRef, setCardRef] = useState('');
+  const submitted = useRef(false);
+  const [externalPaymentVerified, setExternalPaymentVerified] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setMethod('cash');
-      setTenderAmount(Math.ceil(totalAmount).toString());
-      setIsProcessing(false);
+      setTenderAmount(totalAmount.toFixed(2));
+      setCardRef('');
+      setExternalPaymentVerified(false);
+      submitted.current = false;
     }
   }, [isOpen, totalAmount]);
 
   const numericTender = parseFloat(tenderAmount) || 0;
-  const changeDue = Math.max(0, numericTender - totalAmount);
+  const changeDue = Math.max(0, Math.round(numericTender * 100) - Math.round(totalAmount * 100)) / 100;
+  const canConfirm = method === 'cash' ? Number.isFinite(numericTender) && numericTender >= totalAmount : externalPaymentVerified;
 
   // Quick denomination buttons for Sri Lankan Rupees
   const denominations = [500, 1000, 2000, 5000];
@@ -51,7 +55,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   const handleExactCash = () => {
-    setTenderAmount(Math.ceil(totalAmount).toString());
+    setTenderAmount(totalAmount.toFixed(2));
   };
 
   const handleQuickAdd = (amount: number) => {
@@ -61,23 +65,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     });
   };
 
-  const handleComplete = async () => {
-    setIsProcessing(true);
-    if (method === 'cash') {
-      addNotification({
-        title: 'Cash drawer simulated',
-        message: 'A frontend cash-drawer pulse was simulated for this payment.',
-        type: 'info',
-      });
+  const handleComplete = () => {
+    if (!canConfirm || submitted.current) return;
+    submitted.current = true;
+    const received = method === 'cash' ? numericTender : totalAmount;
+    const order = pendingOrder
+      ? completePendingPayment(method, received)
+      : createOrder(method, received, true);
+    if (!order) {
+      submitted.current = false;
+      return;
     }
-
-    setTimeout(() => {
-      const newOrder = pendingOrder
-        ? completePendingPayment(method, numericTender)
-        : createOrder(method, numericTender, true);
-      setIsProcessing(false);
-      if (newOrder) onPaymentSuccess(newOrder);
-    }, 600);
+    if (method === 'cash' && settings.cashDrawer.autoOpenOnCash) {
+      addNotification({ title: 'Cash drawer simulated', message: 'The browser simulated the configured cash-drawer pulse.', type: 'info' });
+    }
+    onPaymentSuccess(order);
   };
 
   return (
@@ -109,7 +111,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               type="button"
               onClick={() => {
                 setMethod('cash');
-                setTenderAmount(Math.ceil(totalAmount).toString());
+                setTenderAmount(totalAmount.toFixed(2));
               }}
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all ${
                 method === 'cash'
@@ -128,6 +130,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               type="button"
               onClick={() => {
                 setMethod('card');
+                setExternalPaymentVerified(false);
                 setTenderAmount(totalAmount.toString());
               }}
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all ${
@@ -147,6 +150,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               type="button"
               onClick={() => {
                 setMethod('qr');
+                setExternalPaymentVerified(false);
                 setTenderAmount(totalAmount.toString());
               }}
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all ${
@@ -176,7 +180,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     onClick={handleExactCash}
                     className="text-xs font-bold text-blue-600 hover:underline"
                   >
-                    Exact Amount (Rs. {Math.ceil(totalAmount)})
+                    Exact Amount (Rs. {totalAmount.toFixed(2)})
                   </button>
                 </div>
                 <div className="relative">
@@ -282,34 +286,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
           {method === 'qr' && (
             <div className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center space-y-3">
-              <div className="w-36 h-36 bg-white p-2 border-2 border-slate-800 rounded-xl flex items-center justify-center shadow-md">
-                <QrCode className="w-32 h-32 text-slate-900" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-800">Scan LankaQR / PromptPay</p>
-                <p className="text-[11px] text-slate-500">
-                  Amount: Rs. {totalAmount.toLocaleString()} • Merchant: Shalom Food Colombo
-                </p>
-              </div>
+              <QrCode size={34} className="text-slate-700" />
+              <p className="text-sm font-bold">Record an external QR payment</p>
+              <p className="text-xs text-slate-600">Use your merchant QR and check the payment before recording it here.</p>
             </div>
           )}
+
+          {method !== 'cash' && <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" checked={externalPaymentVerified} onChange={(event) => setExternalPaymentVerified(event.target.checked)} />
+            I verified payment on the external terminal
+          </label>}
 
           {/* Confirm Payment Button */}
           <div className="pt-4 mt-auto">
             <button
               type="button"
-              disabled={isProcessing || (method === 'cash' && numericTender < totalAmount)}
+              disabled={!canConfirm}
               onClick={handleComplete}
               className="w-full flex items-center justify-center space-x-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
             >
-              {isProcessing ? (
-                <span>Authorizing & Recording...</span>
-              ) : (
-                <>
-                  <span>Confirm Payment & Preview Receipt</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
+              <span>Confirm Payment &amp; Preview Receipt</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>

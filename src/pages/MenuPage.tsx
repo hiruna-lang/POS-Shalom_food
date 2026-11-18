@@ -1,3 +1,5 @@
+import { getPortions, standardSizes } from '../utils/portions';
+import { formatLkr } from '../utils/billing';
 import React, { useState, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
 import { MenuItem, Category, KitchenTarget } from '../types/pos';
@@ -86,10 +88,11 @@ export const MenuPage: React.FC = () => {
   }, [menuItems, selectedCategory, selectedStatusFilter, searchQuery]);
 
   // Form state for Item Create/Edit
+  const [view, setView] = useState<'table' | 'cards'>('table');
+  const [portions, setPortions] = useState<NonNullable<MenuItem['portions']>>([]);
   const [itemName, setItemName] = useState('');
   const [itemDesc, setItemDesc] = useState('');
   const [itemCat, setItemCat] = useState(categories[0]?.id || '');
-  const [itemPrice, setItemPrice] = useState(1000);
   const [itemCost, setItemCost] = useState(400);
   const [itemImage, setItemImage] = useState('');
   const [itemKitchen, setItemKitchen] = useState<KitchenTarget>('kitchen_1');
@@ -103,10 +106,10 @@ export const MenuPage: React.FC = () => {
     if (item) {
       setEditingItem(item);
       setItemName(item.name);
+      setPortions(getPortions(item));
       setItemDesc(item.description);
       setItemCat(item.categoryId);
-      setItemPrice(item.price);
-      setItemCost(item.costPrice || Math.round(item.price * 0.45));
+      setItemCost(item.costPrice ?? 0);
       setItemImage(item.image);
       setItemKitchen(item.kitchen);
       setItemPrepTime(item.prepTime);
@@ -116,11 +119,11 @@ export const MenuPage: React.FC = () => {
     } else {
       setEditingItem(null);
       setItemName('');
+      setPortions(getPortions({ price: 0 }));
       setItemDesc('');
       setItemCat(categories[0]?.id || '');
-      setItemPrice(1200);
-      setItemCost(500);
-      setItemImage('https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=80');
+      setItemCost(0);
+      setItemImage('');
       setItemKitchen('kitchen_1');
       setItemPrepTime(12);
       setItemIsSpicy(false);
@@ -132,22 +135,30 @@ export const MenuPage: React.FC = () => {
 
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemName.trim() || itemPrice <= 0 || itemPrepTime < 0) {
+    if (!itemName.trim() || !itemCat || itemPrepTime < 1) {
       addNotification({
         title: 'Invalid menu item',
-        message: 'Enter a dish name, a price greater than zero, and a valid preparation time.',
+        message: 'Enter a dish name, category, and valid preparation time.',
         type: 'warning',
       });
       return;
     }
 
+    const variants = portions.map((option) => ({ ...option, name: option.name.trim() }));
+    if (variants.some(({ name, price }) => !name || !Number.isFinite(price) || price <= 0) ||
+        new Set(variants.map(({ name }) => name.toLowerCase())).size !== variants.length) {
+      addNotification({ title: 'Check portion sizes', message: 'Enter a unique name and positive price for each portion.', type: 'warning' });
+      return;
+    }
+    const mediumPrice = variants[1].price;
     if (editingItem) {
       updateMenuItem({
         ...editingItem,
-        name: itemName,
+        name: itemName.trim(),
         description: itemDesc,
         categoryId: itemCat,
-        price: itemPrice,
+        price: mediumPrice,
+        portions: variants,
         costPrice: itemCost,
         image: itemImage,
         kitchen: itemKitchen,
@@ -158,10 +169,11 @@ export const MenuPage: React.FC = () => {
       });
     } else {
       addMenuItem({
-        name: itemName,
+        name: itemName.trim(),
         description: itemDesc,
         categoryId: itemCat,
-        price: itemPrice,
+        price: mediumPrice,
+        portions: variants,
         costPrice: itemCost,
         image: itemImage,
         isAvailable: itemIsAvailable,
@@ -230,7 +242,7 @@ export const MenuPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto select-none">
+    <div className="module-page space-y-4">
       {/* 1. Header & Overview Statistics */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -357,8 +369,27 @@ export const MenuPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Menu Items Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex flex-wrap gap-2" aria-label="Menu display">
+            <button type="button" className={view === 'table' ? 'primary-action' : 'secondary-action'} aria-pressed={view === 'table'} onClick={() => setView('table')}>Table view</button>
+            <button type="button" className={view === 'cards' ? 'primary-action' : 'secondary-action'} aria-pressed={view === 'cards'} onClick={() => setView('cards')}>Card view</button>
+          </div>
+          {view === 'cards' ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {!filteredItems.length && <p className="surface p-4">No matching menu items.</p>}
+              {filteredItems.map((item) => (
+                <article className="surface overflow-hidden" key={item.id}>
+                  {item.image && <img className="h-32 w-full bg-slate-100 object-cover" src={item.image} alt="" loading="lazy" />}
+                  <div className="space-y-2 p-3 text-sm">
+                    <h3 className="font-bold">{item.name}</h3>
+                    <p>{item.prepTime} min prep</p>
+                    <p className="text-slate-600">{item.isHidden ? 'Hidden' : item.isAvailable ? 'Available' : 'Unavailable'}</p>
+                    {getPortions(item).map((option) => <p className="text-xs" key={option.name}>{option.name} / {formatLkr(option.price)}</p>)}
+                    <button type="button" className="secondary-action" onClick={() => openItemModal(item)}>Edit item</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-200">
@@ -420,7 +451,11 @@ export const MenuPage: React.FC = () => {
                           </td>
 
                           <td className="py-3 px-4 font-black text-slate-900">
-                            Rs. {item.price.toLocaleString()}
+                            {getPortions(item).map((option) => (
+                              <div key={option.name} className="flex justify-between gap-3 whitespace-nowrap tabular-nums">
+                                <span className="font-medium text-slate-600">{option.name}</span><span>{formatLkr(option.price)}</span>
+                              </div>
+                            ))}
                           </td>
 
                           <td className="py-3 px-4 text-slate-500">
@@ -500,7 +535,8 @@ export const MenuPage: React.FC = () => {
                                 type="button"
                                 onClick={() => openItemModal(item)}
                                 className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                                title="Edit Item Details"
+                                title="Edit item and prices"
+                                aria-label={`Edit prices for ${item.name}`}
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
@@ -523,7 +559,7 @@ export const MenuPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -615,7 +651,8 @@ export const MenuPage: React.FC = () => {
                 required
                 value={itemName}
                 onChange={(e) => setItemName(e.target.value)}
-                placeholder="e.g. Mutton Biryani Large"
+                aria-label="Dish name"
+                placeholder="e.g. Mutton Biryani"
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -647,25 +684,39 @@ export const MenuPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">Selling Price (Rs.) *</label>
-              <input
-                type="number"
-                min="0"
-                step="50"
-                required
-                value={itemPrice}
-                onChange={(e) => setItemPrice(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
-              />
+          <fieldset className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <legend className="px-1 text-sm font-bold">Portion prices (LKR)</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {portions.slice(0, standardSizes.length).map((option, index) => (
+                <label key={option.name} className="grid gap-1 text-sm font-semibold">
+                  {option.name} price
+                  <input required type="number" min=".01" step=".01" placeholder="0.00"
+                    className="min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3"
+                    value={option.price || ''}
+                    onChange={(event) => setPortions((previous) => previous.map((entry, row) => row === index ? { ...entry, price: Number(event.target.value) } : entry))} />
+                </label>
+              ))}
             </div>
+            {portions.slice(standardSizes.length).map((option, extraIndex) => {
+              const index = extraIndex + standardSizes.length;
+              return (
+                <div key={index} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                  <input required aria-label={`Extra portion ${extraIndex + 1} name`} placeholder="e.g. Family" className="min-h-11 min-w-0 rounded-lg border px-2" value={option.name} onChange={(event) => setPortions((previous) => previous.map((entry, row) => row === index ? { ...entry, name: event.target.value } : entry))} />
+                  <input required aria-label={`Extra portion ${extraIndex + 1} price`} type="number" min=".01" step=".01" className="min-h-11 min-w-0 rounded-lg border px-2" value={option.price || ''} onChange={(event) => setPortions((previous) => previous.map((entry, row) => row === index ? { ...entry, price: Number(event.target.value) } : entry))} />
+                  <button type="button" className="secondary-action" aria-label={`Remove extra portion ${extraIndex + 1}`} onClick={() => setPortions((previous) => previous.filter((_, row) => row !== index))}><Trash2 size={16} /></button>
+                </div>
+              );
+            })}
+            <button type="button" className="secondary-action" onClick={() => setPortions((previous) => [...previous, { name: '', price: 0 }])}>Add another size</button>
+          </fieldset>
 
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1">Cost Price (Rs.)</label>
               <input
                 type="number"
                 min="0"
+                step=".01"
                 value={itemCost}
                 onChange={(e) => setItemCost(Number(e.target.value))}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -752,7 +803,7 @@ export const MenuPage: React.FC = () => {
               type="submit"
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md"
             >
-              Save Food Item
+              {editingItem ? 'Save changes' : 'Create menu item'}
             </button>
           </div>
         </form>

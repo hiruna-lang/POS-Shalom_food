@@ -1,3 +1,4 @@
+import { usePreferences } from '../utils/preferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePos } from '../context/PosContext';
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
+  const preferences = usePreferences();
   const navigate = useNavigate();
   const { login, settings, currentTime } = usePos();
 
@@ -92,12 +94,12 @@ export const LoginPage: React.FC = () => {
         setLoginSuccess(true);
         sound.playSuccess();
         setTimeout(() => {
-          navigate('/');
+          navigate(res.user?.role === 'cashier' && preferences.cashierHome === 'pos' ? '/pos' : '/', { replace: true });
         }, 300);
       } else {
         sound.playError();
         setIsSubmitting(false);
-        setErrorMessage(res.message || 'Incorrect passcode. Default is 0000');
+        setErrorMessage(res.message || 'Incorrect passcode.');
         setIsShaking(true);
         setTimeout(() => {
           setIsShaking(false);
@@ -105,7 +107,7 @@ export const LoginPage: React.FC = () => {
         }, 500);
       }
     },
-    [isSubmitting, loginSuccess, login, navigate, passcode]
+    [isSubmitting, loginSuccess, login, navigate, passcode, preferences.cashierHome]
   );
 
   // Auto-submit when 4th digit is entered
@@ -166,7 +168,7 @@ export const LoginPage: React.FC = () => {
         <div className="flex items-center space-x-4 text-slate-400 text-xs">
           <div className="flex items-center space-x-1.5 text-emerald-400 font-mono text-[11px]">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Register #01 Online</span>
+            <span>Register #01 / Local terminal</span>
           </div>
           <Wifi className="w-3.5 h-3.5 text-slate-300" />
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -181,16 +183,7 @@ export const LoginPage: React.FC = () => {
           <span className="font-semibold text-white">Shalom Food Enterprise Terminal</span>
           <span className="text-slate-400 hidden md:inline">— Secure Cashier Station</span>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTap();
-            setPasscode('0000');
-          }}
-          className="text-[11px] font-mono text-sky-300 hover:text-sky-100 bg-slate-700/80 hover:bg-slate-700 px-2.5 py-0.5 rounded border border-slate-600 transition-colors cursor-pointer"
-        >
-          Quick PIN: 0000
-        </button>
+
       </div>
 
       {/* 3. MAIN TERMINAL WORKSPACE */}
@@ -283,7 +276,7 @@ export const LoginPage: React.FC = () => {
                 </span>
               ) : (
                 <span className="text-slate-400 text-[11px] font-mono">
-                  Default Cashier Passcode: 0000
+                  Enter your staff PIN
                 </span>
               )}
             </div>

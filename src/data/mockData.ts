@@ -594,7 +594,7 @@ export const INITIAL_SETTINGS: AppSettings = {
       port: 9100,
       paperWidth: '80mm',
       isEnabled: true,
-      autoPrint: true,
+      autoPrint: false,
     },
     kitchen1: {
       name: 'Kitchen 1 - Hot Line & Grill (Bixolon SRP-350III)',

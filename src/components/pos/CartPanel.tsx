@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePos } from '../../context/PosContext';
 import {
   Trash2,
@@ -25,10 +25,13 @@ import { ReceiptModal } from './ReceiptModal';
 import { KotModal } from './KotModal';
 import { Modal } from '../common/Modal';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-import { Order } from '../../types/pos';
+import { TableSelectorModal } from './TableSelectorModal';
+import { usePreferences } from '../../utils/preferences';
+import { formatLkr } from '../../utils/billing';
+import { CartItem, Order } from '../../types/pos';
 import { sound } from '../../utils/sound';
 
-export const CartPanel: React.FC = () => {
+export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEdit }) => {
   const {
     orderType,
     setOrderType,
@@ -41,7 +44,10 @@ export const CartPanel: React.FC = () => {
     cart,
     updateCartQuantity,
     removeFromCart,
-    updateItemNotes,
+    currentUser,
+    orders,
+    selectedTable,
+    setSelectedTable,
     clearCart,
     subtotal,
     discount,
@@ -58,8 +64,23 @@ export const CartPanel: React.FC = () => {
     heldOrders,
     holdCurrentOrder,
     recallHeldOrder,
-    deleteHeldOrder,
   } = usePos();
+
+  const { animations, reducedMotion } = usePreferences();
+  const previousLines = useRef(cart);
+  const lineElements = useRef(new Map<string, HTMLElement>());
+  useEffect(() => {
+    const prior = previousLines.current;
+    previousLines.current = cart;
+    if (prior === cart || !animations || reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    cart.forEach((line) => {
+      if (prior.includes(line)) return;
+      lineElements.current.get(line.lineId ?? line.menuItem.id)?.animate(
+        [{ backgroundColor: '#dbeafe' }, { backgroundColor: 'transparent' }],
+        { duration: 350, easing: 'ease-out' },
+      );
+    });
+  }, [cart, animations, reducedMotion]);
 
   // Modals state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -68,17 +89,16 @@ export const CartPanel: React.FC = () => {
   const [showHeldModal, setShowHeldModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<Order | null>(null);
 
-  // Note editing state for individual items
-  const [editingNoteItemId, setEditingNoteItemId] = useState<string | null>(null);
-  const [tempNote, setTempNote] = useState('');
+  const [showTables, setShowTables] = useState(false);
 
   // Discount input toggle
   const [showDiscountInput, setShowDiscountInput] = useState(false);
 
   // Handle Send to Kitchen (KOT)
   const handleSendToKitchen = () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || pendingPaymentOrder) return;
     const order = createOrder(undefined, undefined, true);
     setLastOrder(order);
     setShowKotModal(true);
@@ -86,22 +106,29 @@ export const CartPanel: React.FC = () => {
 
   // Handle Payment completion from modal
   const handlePaymentSuccess = (order: Order) => {
-    setLastOrder(order);
+    setLastReceipt(order);
     setShowPaymentModal(false);
     setShowReceiptModal(true);
+    if (settings.printers.customerBill.isEnabled && settings.printers.customerBill.autoPrint) {
+      requestAnimationFrame(() => window.print());
+    }
   };
 
   const paymentTotal = pendingPaymentOrder ? pendingPaymentOrder.total : grandTotal;
 
   return (
-    <div className="w-full lg:w-96 xl:w-[420px] bg-white border-l border-slate-200 flex flex-col h-[calc(100vh-4rem)] shadow-lg select-none">
+    <div className="cart-content">
       {/* 1. Order Type Selection Tabs */}
-      <div className="p-3 border-b border-slate-200 bg-slate-50">
+      <div className="px-3 py-2 border-b border-slate-200">
+        <div className="flex min-h-11 items-center justify-between gap-2 text-sm">
+          <strong className="text-slate-600">{pendingPaymentOrder?.orderNumber ?? `Order #${1001 + orders.length}`}</strong>
+          {orderType === 'dine_in' && <button type="button" className="secondary-action" onClick={() => setShowTables(true)}>{selectedTable ? `Table ${selectedTable.number}` : 'Select table'}</button>}
+        </div>
         <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/80 rounded-xl">
           <button
             type="button"
             onClick={() => setOrderType('dine_in')}
-            className={`flex items-center justify-center space-x-1.5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center justify-center space-x-1.5 min-h-11 rounded-lg text-xs font-bold transition-all ${
               orderType === 'dine_in'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -113,7 +140,7 @@ export const CartPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => setOrderType('takeaway')}
-            className={`flex items-center justify-center space-x-1.5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center justify-center space-x-1.5 min-h-11 rounded-lg text-xs font-bold transition-all ${
               orderType === 'takeaway'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -155,11 +182,11 @@ export const CartPanel: React.FC = () => {
       </div>
 
       {/* 2. Cart Items List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+      <div className="cart-orders px-3">
         {cart.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
-            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-              <ShoppingBag className="w-8 h-8 text-slate-300" />
+          <div className="h-full flex flex-col items-center justify-center text-slate-400 py-3">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+              <ShoppingBag className="w-5 h-5 text-slate-300" />
             </div>
             <p className="text-sm font-bold text-slate-600">Cart is empty</p>
             <p className="text-xs text-slate-400 text-center max-w-[200px] mt-1">
@@ -167,115 +194,38 @@ export const CartPanel: React.FC = () => {
             </p>
           </div>
         ) : (
-          cart.map((item) => (
-            <div
-              key={item.menuItem.id}
-              className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 pr-2">
-                  <div className="flex items-center space-x-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        item.menuItem.kitchen === 'kitchen_1' ? 'bg-amber-500' : 'bg-cyan-500'
-                      }`}
-                      title={item.menuItem.kitchen === 'kitchen_1' ? 'Kitchen 1' : 'Kitchen 2'}
-                    />
-                    <h4 className="text-xs font-bold text-slate-800 line-clamp-1">
-                      {item.menuItem.name}
-                    </h4>
+          cart.map((item) => {
+            const id = item.lineId ?? item.menuItem.id;
+            return (
+              <article key={id} className="cart-line" ref={(element) => {
+                if (element) lineElements.current.set(id, element);
+                else lineElements.current.delete(id);
+              }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold">{item.menuItem.name}</h3>
+                    <p className="text-xs text-slate-600">{item.portion && `${item.portion} / `}{formatLkr(item.menuItem.price)} each</p>
                   </div>
-                  <p className="text-xs font-semibold text-blue-600 mt-0.5">
-                    Rs. {item.menuItem.price.toLocaleString()}
-                  </p>
+                  <strong className="shrink-0 text-sm tabular-nums">{formatLkr(Math.round(item.menuItem.price * 100) * item.quantity / 100)}</strong>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => removeFromCart(item.menuItem.id)}
-                  className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors"
-                  aria-label="Remove item"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Item Note / Special Instructions */}
-              <div className="mt-2 flex items-center justify-between text-xs">
-                {editingNoteItemId === item.menuItem.id ? (
-                  <div className="flex items-center space-x-1.5 w-full mt-1">
-                    <input
-                      type="text"
-                      value={tempNote}
-                      onChange={(e) => setTempNote(e.target.value)}
-                      placeholder="e.g. Extra spicy, no onions"
-                      className="flex-1 px-2 py-1 text-xs border border-blue-400 rounded-md focus:outline-none"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateItemNotes(item.menuItem.id, tempNote);
-                        setEditingNoteItemId(null);
-                      }}
-                      className="px-2 py-1 bg-blue-600 text-white rounded-md text-[10px] font-bold"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingNoteItemId(null)}
-                      className="p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                <div className="mt-1 flex items-center gap-1">
+                  <button type="button" className="secondary-action" aria-label={`Edit ${item.menuItem.name}`} onClick={() => onEdit(item)}><Edit3 size={15} /></button>
+                  <button type="button" className="secondary-action text-rose-600" aria-label={`Remove ${item.menuItem.name}`} onClick={() => removeFromCart(id)}><Trash2 size={15} /></button>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button type="button" className="secondary-action" aria-label="Decrease quantity" onClick={() => updateCartQuantity(id, -1)}><Minus size={16} /></button>
+                    <span className="w-6 text-center text-sm font-bold tabular-nums">{item.quantity}</span>
+                    <button type="button" className="secondary-action" aria-label="Increase quantity" onClick={() => updateCartQuantity(id, 1)}><Plus size={16} /></button>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTempNote(item.notes || '');
-                      setEditingNoteItemId(item.menuItem.id);
-                    }}
-                    className="flex items-center space-x-1 text-[11px] text-slate-500 hover:text-blue-600 truncate max-w-[180px]"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span className="truncate italic">
-                      {item.notes ? `"${item.notes}"` : '+ Add kitchen note'}
-                    </span>
-                  </button>
-                )}
-
-                {/* Quantity Controls (Large Touch buttons) */}
-                <div className="flex items-center space-x-1.5 ml-auto">
-                  <button
-                    type="button"
-                    onClick={() => updateCartQuantity(item.menuItem.id, -1)}
-                    className="w-11 h-11 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
-                    aria-label="Decrease quantity"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="w-6 text-center font-bold text-xs text-slate-900">
-                    {item.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => updateCartQuantity(item.menuItem.id, 1)}
-                    className="w-11 h-11 rounded-lg bg-white border border-slate-300 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 shadow-xs"
-                    aria-label="Increase quantity"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
                 </div>
-              </div>
-            </div>
-          ))
+                {item.notes && <p className="mt-1 break-words text-xs text-slate-600">{item.notes}</p>}
+              </article>
+            );
+          })
         )}
       </div>
 
       {/* 3. Financial Totals & Discounts */}
-      <div className="p-3 border-t border-slate-200 bg-slate-50/70 space-y-2">
+      <div className="cart-billing space-y-2">
         {/* Overall Order Note toggle */}
         <div className="flex items-center justify-between text-xs">
           <input
@@ -300,6 +250,7 @@ export const CartPanel: React.FC = () => {
           <div className="flex justify-between items-center">
             <button
               type="button"
+              disabled={currentUser.role === 'cashier'}
               onClick={() => setShowDiscountInput(!showDiscountInput)}
               className="text-blue-600 hover:underline flex items-center space-x-1"
             >
@@ -312,7 +263,7 @@ export const CartPanel: React.FC = () => {
           </div>
 
           {/* Collapsible Discount Input */}
-          {showDiscountInput && (
+          {showDiscountInput && currentUser.role !== 'cashier' && (
             <div className="p-2 bg-white rounded-lg border border-blue-200 flex items-center space-x-2">
               <input
                 type="number"
@@ -380,12 +331,12 @@ export const CartPanel: React.FC = () => {
       </div>
 
       {/* 4. Action Buttons (KOT, Print Bill, Pay Now, Clear) */}
-      <div className="p-3 bg-white border-t border-slate-200 space-y-2">
+      <div className="cart-actions p-3 bg-white border-t border-slate-200 space-y-2">
         <div className="grid grid-cols-2 gap-2">
           {/* Send KOT Button */}
           <button
             type="button"
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || !!pendingPaymentOrder}
             onClick={handleSendToKitchen}
             className="flex items-center justify-center space-x-1.5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all disabled:opacity-40 disabled:pointer-events-none"
           >
@@ -396,16 +347,12 @@ export const CartPanel: React.FC = () => {
           {/* Print Customer Bill Button */}
           <button
             type="button"
-            disabled={cart.length === 0}
-            onClick={() => {
-              const order = createOrder(undefined, undefined, false);
-              setLastOrder(order);
-              setShowReceiptModal(true);
-            }}
+            disabled={!lastReceipt}
+            onClick={() => setShowReceiptModal(true)}
             className="flex items-center justify-center space-x-1.5 py-3 rounded-xl bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-bold text-xs shadow-md transition-all disabled:opacity-40 disabled:pointer-events-none"
           >
             <Printer className="w-4 h-4" />
-            <span>Print Bill</span>
+            <span>Print receipt</span>
           </button>
         </div>
 
@@ -417,22 +364,26 @@ export const CartPanel: React.FC = () => {
           className="w-full flex items-center justify-center space-x-2 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-extrabold text-sm shadow-lg shadow-blue-600/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
         >
           <CreditCard className="w-5 h-5" />
-          <span>Pay Now (Rs. {grandTotal.toLocaleString()})</span>
+          <span>Pay Now ({formatLkr(grandTotal)})</span>
         </button>
 
-        {pendingPaymentOrder && cart.length === 0 && (
+        {pendingPaymentOrder && (
           <button
             type="button"
             onClick={() => setShowPaymentModal(true)}
             className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition-all"
           >
             <CreditCard className="w-5 h-5" />
-            <span>Pay Pending Order (Rs. {paymentTotal.toLocaleString()})</span>
+            <span>Pay Pending Order ({formatLkr(paymentTotal)})</span>
           </button>
         )}
 
+        <div className="flex gap-2">
+          <button type="button" className="secondary-action" disabled={!cart.length} onClick={() => holdCurrentOrder()}><PauseCircle size={16} /> Hold</button>
+          <button type="button" className="secondary-action" disabled={!heldOrders.length} onClick={() => setShowHeldModal(true)}><PlayCircle size={16} /> Held ({heldOrders.length})</button>
+        </div>
         {cart.length > 0 && (
-          <div className="flex justify-between items-center pt-1">
+          <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
             <button
               type="button"
               onClick={() => setShowClearConfirm(true)}
@@ -447,7 +398,17 @@ export const CartPanel: React.FC = () => {
         )}
       </div>
 
+      <Modal isOpen={showHeldModal} onClose={() => setShowHeldModal(false)} title="Held orders">
+        {cart.length > 0 && <p className="mb-3 text-sm text-slate-600">Hold the current order before resuming another.</p>}
+        <div className="space-y-2">
+          {heldOrders.map((order) => <div key={order.id} className="surface flex items-center justify-between gap-2 p-2">
+            <span><strong>{order.label}</strong><small className="block text-slate-600">{order.timestamp} / {formatLkr(order.subtotal)}</small></span>
+            <button type="button" className="secondary-action" disabled={cart.length > 0} onClick={() => { recallHeldOrder(order.id); setShowHeldModal(false); }}>Resume</button>
+          </div>)}
+        </div>
+      </Modal>
       {/* Modals */}
+      <TableSelectorModal isOpen={showTables} onClose={() => setShowTables(false)} onSelectTable={(table) => { setSelectedTable(table); setShowTables(false); }} />
       <ConfirmDialog
         isOpen={showClearConfirm}
         onClose={() => setShowClearConfirm(false)}
@@ -466,21 +427,8 @@ export const CartPanel: React.FC = () => {
         pendingOrder={pendingPaymentOrder}
       />
 
-      {lastOrder && (
-        <>
-          <ReceiptModal
-            isOpen={showReceiptModal}
-            onClose={() => setShowReceiptModal(false)}
-            order={lastOrder}
-          />
-
-          <KotModal
-            isOpen={showKotModal}
-            onClose={() => setShowKotModal(false)}
-            order={lastOrder}
-          />
-        </>
-      )}
+      {lastReceipt && <ReceiptModal isOpen={showReceiptModal} onClose={() => setShowReceiptModal(false)} order={lastReceipt} />}
+      {lastOrder && <KotModal isOpen={showKotModal} onClose={() => setShowKotModal(false)} order={lastOrder} />}
     </div>
   );
 };

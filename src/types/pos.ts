@@ -7,6 +7,7 @@ export interface MenuItem {
   categoryId: string;
   price: number;
   costPrice?: number;
+  portions?: { name: string; price: number }[];
   image: string;
   isAvailable: boolean;
   isHidden: boolean;
@@ -27,6 +28,9 @@ export interface Category {
 }
 
 export interface CartItem {
+  lineId?: string;
+  portion?: string;
+  kitchenTarget?: KitchenTarget;
   menuItem: MenuItem;
   quantity: number;
   notes?: string;

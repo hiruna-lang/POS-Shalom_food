@@ -1,3 +1,5 @@
+import { getPortions } from '../utils/portions';
+import { calculateBill } from '../utils/billing';
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   Category,
@@ -40,7 +42,6 @@ interface PosContextType {
   login: (pin: string) => { success: boolean; user?: User; message?: string };
   logout: () => void;
   currentUser: User;
-  setCurrentUser: (user: User) => void;
   users: User[];
   addUser: (user: Omit<User, 'id'>) => void;
   updateUser: (user: User) => void;
@@ -76,10 +77,11 @@ interface PosContextType {
   discountType: 'percentage' | 'fixed';
   setDiscountType: (type: 'percentage' | 'fixed') => void;
   cart: CartItem[];
-  addToCart: (item: MenuItem, qty?: number, notes?: string) => void;
+  addToCart: (item: MenuItem, qty?: number, notes?: string, portion?: string) => void;
   removeFromCart: (itemId: string) => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
   updateItemNotes: (itemId: string, notes: string) => void;
+  replaceCartLine: (lineId: string, item: MenuItem, quantity: number, notes: string, portion?: string) => void;
   clearCart: () => void;
 
   // Cart Calculations
@@ -95,6 +97,7 @@ interface PosContextType {
   pendingPaymentOrder: Order | null;
   completePendingPayment: (method: PaymentMethod, amountPaid: number) => Order | null;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
+  advanceKitchenStation: (orderId: string, station: KitchenTarget) => void;
   updatePaymentStatus: (orderId: string, method: PaymentMethod, amountPaid: number) => void;
   cancelOrder: (orderId: string, reason?: string) => void;
   recallOrderToCart: (order: Order) => void;
@@ -141,6 +144,30 @@ interface PosContextType {
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
 
+function newId() {
+  return Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('');
+}
+
+function readTerminalState<T>(key: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(`shalom-pos-v1:${key}`);
+    return stored === null ? fallback : JSON.parse(stored) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeTerminalState<T>(key: string, value: T) {
+  try { localStorage.setItem(`shalom-pos-v1:${key}`, JSON.stringify(value)); }
+  catch { /* Keep the terminal usable when browser storage is unavailable. */ }
+}
+
+function useTerminalState<T>(key: string, fallback: T) {
+  const [value, setValue] = useState<T>(() => readTerminalState(key, fallback));
+  useEffect(() => writeTerminalState(key, value), [key, value]);
+  return [value, setValue] as const;
+}
+
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -150,49 +177,65 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Users state
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [users, setUsers] = useTerminalState<User[]>('staff', INITIAL_USERS);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('pos_is_authenticated') === 'true';
+    return sessionStorage.getItem('pos_is_authenticated') === 'true' &&
+      users.some((user) => user.id === sessionStorage.getItem('pos_current_user_id') && user.status === 'active');
   });
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const savedId = sessionStorage.getItem('pos_current_user_id');
     if (savedId) {
-      const found = INITIAL_USERS.find((u) => u.id === savedId);
+      const found = users.find((u) => u.id === savedId);
       if (found) return found;
     }
     return INITIAL_USERS[0];
   });
 
   // Categories & Menu
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS);
+  const [categories, setCategories] = useTerminalState<Category[]>('categories', INITIAL_CATEGORIES);
+  const [menuItems, setMenuItems] = useTerminalState<MenuItem[]>('menu', INITIAL_MENU_ITEMS);
 
   // Tables & Orders
-  const [tables, setTables] = useState<Table[]>(INITIAL_TABLES);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null);
+  const [tables, setTables] = useTerminalState<Table[]>('tables', INITIAL_TABLES);
+  const [orders, setOrders] = useTerminalState<Order[]>('orders', INITIAL_ORDERS);
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useTerminalState<Order | null>('pending-payment', null);
 
-  // Cart & POS state
-  const [orderType, setOrderType] = useState<OrderType>('dine_in');
-  const [selectedTable, setSelectedTable] = useState<Table | null>(INITIAL_TABLES[1]); // T-02 default
-  const [customerName, setCustomerName] = useState<string>('');
-  const [customerPhone, setCustomerPhone] = useState<string>('');
-  const [deliveryAddress, setDeliveryAddress] = useState<string>('');
-  const [orderNotes, setOrderNotes] = useState<string>('');
-  const [discount, setDiscount] = useState<number>(0);
-  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
-  const [cart, setCart] = useState<CartItem[]>([
-    { menuItem: INITIAL_MENU_ITEMS[0], quantity: 1, notes: 'Less spicy' },
-    { menuItem: INITIAL_MENU_ITEMS[8], quantity: 2 },
-  ]);
-  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  // Read the draft once so its table, pricing mode and cart are restored together.
+  const [draft] = useState(() => readTerminalState<Omit<HeldOrder, 'id' | 'label' | 'timestamp' | 'subtotal'>>('draft', {
+    orderType: 'dine_in',
+    table: INITIAL_TABLES[1],
+    customerName: '',
+    customerPhone: '',
+    deliveryAddress: '',
+    orderNotes: '',
+    discount: 0,
+    discountType: 'percentage',
+    cart: [
+      { menuItem: INITIAL_MENU_ITEMS[0], quantity: 1, notes: 'Less spicy' },
+      { menuItem: INITIAL_MENU_ITEMS[8], quantity: 2 },
+    ],
+  }));
+  const [orderType, setOrderType] = useState(draft.orderType);
+  const [selectedTable, setSelectedTable] = useState(draft.table);
+  const [customerName, setCustomerName] = useState(draft.customerName);
+  const [customerPhone, setCustomerPhone] = useState(draft.customerPhone);
+  const [deliveryAddress, setDeliveryAddress] = useState(draft.deliveryAddress);
+  const [orderNotes, setOrderNotes] = useState(draft.orderNotes);
+  const [discount, setDiscount] = useState(draft.discount);
+  const [discountType, setDiscountType] = useState(draft.discountType);
+  const [cart, setCart] = useState(draft.cart);
+  useEffect(() => {
+    writeTerminalState('draft', { orderType, table: selectedTable, customerName, customerPhone,
+      deliveryAddress, orderNotes, discount, discountType, cart });
+  }, [orderType, selectedTable, customerName, customerPhone, deliveryAddress, orderNotes, discount, discountType, cart]);
+  const [heldOrders, setHeldOrders] = useTerminalState<HeldOrder[]>('held-orders', []);
 
   // Inventory & transactions
   const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
   const [stockTransactions, setStockTransactions] = useState<StockTransaction[]>(INITIAL_STOCK_TRANSACTIONS);
 
   // Settings & Notifications
-  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [settings, setSettings] = useTerminalState<AppSettings>('settings', INITIAL_SETTINGS);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
 
   // Helper notification adder
@@ -214,48 +257,48 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications([]);
   };
 
-  // Cart actions
-  const addToCart = (item: MenuItem, qty = 1, notes?: string) => {
-    if (!item.isAvailable) {
-      addNotification({
-        title: 'Item Unavailable',
-        message: `${item.name} is currently out of stock.`,
-        type: 'warning',
-      });
-      return;
-    }
+  // Cart lines remain independent when their portion or kitchen instructions differ.
+  const configuredLine = (item: MenuItem, quantity: number, notes?: string, portion?: string): CartItem | null => {
+    const product = menuItems.find((product) => product.id === item.id);
+    const variant = product && getPortions(product).find((option) => option.name === portion);
+    if (!product?.isAvailable || !Number.isSafeInteger(quantity) || quantity < 1 ||
+        !variant) return null;
+    return {
+      lineId: newId(),
+      menuItem: { ...product, price: variant.price },
+      quantity,
+      portion: variant.name,
+      notes: notes?.trim() || undefined,
+    };
+  };
 
-    setCart((prev) => {
-      const existingIndex = prev.findIndex((c) => c.menuItem.id === item.id);
-      if (existingIndex > -1) {
-        const updated = [...prev];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          quantity: updated[existingIndex].quantity + qty,
-          notes: notes !== undefined ? notes : updated[existingIndex].notes,
-        };
-        return updated;
-      } else {
-        return [...prev, { menuItem: item, quantity: qty, notes }];
-      }
-    });
-
-    addNotification({
-      title: 'Added to Cart',
-      message: `${qty}x ${item.name} added to bill.`,
-      type: 'info',
+  const addToCart = (item: MenuItem, quantity = 1, notes?: string, portion?: string) => {
+    const line = configuredLine(item, quantity, notes, portion);
+    if (!line) return;
+    setCart((previous) => {
+      const match = previous.findIndex((entry) => entry.menuItem.id === item.id &&
+        entry.portion === line.portion && entry.notes === line.notes && entry.menuItem.price === line.menuItem.price);
+      if (match < 0) return [...previous, line];
+      return previous.map((entry, index) => index === match ? { ...entry, quantity: entry.quantity + quantity } : entry);
     });
   };
 
+  const replaceCartLine = (lineId: string, item: MenuItem, quantity: number, notes: string, portion?: string) => {
+    const replacement = configuredLine(item, quantity, notes, portion);
+    if (!replacement) return;
+    setCart((previous) => previous.map((entry) =>
+      (entry.lineId ?? entry.menuItem.id) === lineId ? { ...replacement, lineId } : entry));
+  };
+
   const removeFromCart = (itemId: string) => {
-    setCart((prev) => prev.filter((c) => c.menuItem.id !== itemId));
+    setCart((prev) => prev.filter((c) => (c.lineId ?? c.menuItem.id) !== itemId));
   };
 
   const updateCartQuantity = (itemId: string, delta: number) => {
     setCart((prev) => {
       return prev
         .map((c) => {
-          if (c.menuItem.id === itemId) {
+          if ((c.lineId ?? c.menuItem.id) === itemId) {
             const newQty = c.quantity + delta;
             return newQty > 0 ? { ...c, quantity: newQty } : null;
           }
@@ -267,7 +310,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateItemNotes = (itemId: string, notes: string) => {
     setCart((prev) =>
-      prev.map((c) => (c.menuItem.id === itemId ? { ...c, notes } : c))
+      prev.map((c) => ((c.lineId ?? c.menuItem.id) === itemId ? { ...c, notes } : c))
     );
   };
 
@@ -277,34 +320,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setOrderNotes('');
   };
 
-  // Cart financial calculations
-  const subtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0);
-  }, [cart]);
-
-  const discountAmount = useMemo(() => {
-    if (discount <= 0) return 0;
-    if (discountType === 'percentage') {
-      return Math.round((subtotal * discount) / 100);
-    }
-    return Math.min(discount, subtotal);
-  }, [subtotal, discount, discountType]);
-
-  const taxAmount = useMemo(() => {
-    const taxableAmount = Math.max(0, subtotal - discountAmount);
-    return Math.round(((taxableAmount * settings.general.taxRate) / 100) * 100) / 100;
-  }, [subtotal, discountAmount, settings.general.taxRate]);
-
-  const serviceChargeAmount = useMemo(() => {
-    // Service charge applies to Dine-in orders
-    if (orderType !== 'dine_in') return 0;
-    const base = Math.max(0, subtotal - discountAmount);
-    return Math.round(((base * settings.general.serviceChargeRate) / 100) * 100) / 100;
-  }, [orderType, subtotal, discountAmount, settings.general.serviceChargeRate]);
-
-  const grandTotal = useMemo(() => {
-    return Math.max(0, subtotal - discountAmount + taxAmount + serviceChargeAmount);
-  }, [subtotal, discountAmount, taxAmount, serviceChargeAmount]);
+  const { subtotal, discountAmount, taxAmount, serviceChargeAmount, grandTotal } = calculateBill(
+    cart.map((item) => ({ price: item.menuItem.price, quantity: item.quantity })),
+    currentUser.role === 'cashier' ? 0 : discount,
+    discountType,
+    settings.general.taxRate,
+    orderType === 'dine_in' ? settings.general.serviceChargeRate : 0,
+  );
 
   // Order creation
   const createOrder = (
@@ -315,7 +337,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const orderNum = `ORD-${1000 + orders.length + 1}`;
     const now = new Date().toISOString();
 
-    const changeDue = amountPaid && amountPaid >= grandTotal ? amountPaid - grandTotal : 0;
+    const changeDue = amountPaid && amountPaid >= grandTotal ? (Math.round(amountPaid * 100) - Math.round(grandTotal * 100)) / 100 : 0;
 
     // Determine kitchen routing for items
     let hasKitchen1 = false;
@@ -327,7 +349,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const newOrder: Order = {
-      id: `ord-${Date.now()}`,
+      id: `ord-${newId()}`,
       orderNumber: orderNum,
       type: orderType,
       tableId: orderType === 'dine_in' ? selectedTable?.id : undefined,
@@ -335,7 +357,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerName: customerName || (orderType === 'dine_in' ? (selectedTable ? `Table ${selectedTable.number}` : 'Guest') : 'Counter Guest'),
       customerPhone: customerPhone || undefined,
       deliveryAddress: orderType === 'delivery' ? deliveryAddress : undefined,
-      items: [...cart],
+      items: cart.map((line) => ({ ...line, kitchenTarget: settings.kitchenRouting[line.menuItem.categoryId] || line.menuItem.kitchen })),
       subtotal,
       discount: discountAmount,
       discountType,
@@ -346,13 +368,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paymentStatus: paymentMethod ? 'paid' : 'pending',
       amountPaid: amountPaid ?? (paymentMethod ? grandTotal : undefined),
       changeDue: paymentMethod ? changeDue : undefined,
-      orderStatus: paymentMethod ? 'completed' : sendToKitchen ? 'in_kitchen' : 'pending',
+      orderStatus: sendToKitchen ? 'in_kitchen' : paymentMethod ? 'completed' : 'pending',
       kitchenStatus: {
         kitchen1: hasKitchen1 ? 'sent' : 'na',
         kitchen2: hasKitchen2 ? 'sent' : 'na',
       },
       createdAt: now,
-      completedAt: paymentMethod ? now : undefined,
+      completedAt: paymentMethod && !sendToKitchen ? now : undefined,
       cashierId: currentUser.id,
       cashierName: currentUser.name,
       notes: orderNotes || undefined,
@@ -367,7 +389,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // If table assigned, mark table as occupied
     if (orderType === 'dine_in' && selectedTable) {
-      updateTableStatus(selectedTable.id, paymentMethod ? 'available' : 'occupied', newOrder.id, newOrder.customerName);
+      updateTableStatus(selectedTable.id, paymentMethod && !sendToKitchen ? 'available' : 'occupied', newOrder.id, newOrder.customerName);
     }
 
     addNotification({
@@ -389,10 +411,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!pendingPaymentOrder) return null;
 
     const changeDue = amountPaid >= pendingPaymentOrder.total
-      ? amountPaid - pendingPaymentOrder.total
+      ? (Math.round(amountPaid * 100) - Math.round(pendingPaymentOrder.total * 100)) / 100
       : 0;
+    const liveOrder = orders.find((order) => order.id === pendingPaymentOrder.id);
+    if (!liveOrder || liveOrder.paymentStatus === 'paid' || liveOrder.orderStatus === 'cancelled') return null;
     const updatedOrder: Order = {
-      ...pendingPaymentOrder,
+      ...liveOrder,
       paymentMethod: method,
       paymentStatus: 'paid',
       amountPaid,
@@ -409,10 +433,23 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updatedOrder;
   };
 
+  const advanceKitchenStation = (orderId: string, station: KitchenTarget) => {
+    const key = station === 'kitchen_1' ? 'kitchen1' : 'kitchen2';
+    setOrders((previous) => previous.map((order) => {
+      const current = order.kitchenStatus[key];
+      if (order.id !== orderId || !['pending', 'in_kitchen'].includes(order.orderStatus) ||
+          (current !== 'sent' && current !== 'preparing')) return order;
+      const kitchenStatus = { ...order.kitchenStatus, [key]: current === 'sent' ? 'preparing' : 'ready' } as Order['kitchenStatus'];
+      const allReady = Object.values(kitchenStatus).every((status) => status === 'na' || status === 'ready');
+      return { ...order, kitchenStatus, orderStatus: allReady ? 'ready' : 'in_kitchen' };
+    }));
+  };
+
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id === orderId) {
+          if ((status === 'ready' || status === 'completed') && Object.values(ord.kitchenStatus).some((stage) => stage === 'sent' || stage === 'preparing')) return ord;
           const isDone = status === 'completed';
           const updated: Order = {
             ...ord,
@@ -433,7 +470,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id === orderId) {
-          const change = amountPaid >= ord.total ? amountPaid - ord.total : 0;
+          const change = amountPaid >= ord.total ? (Math.round(amountPaid * 100) - Math.round(ord.total * 100)) / 100 : 0;
           return {
             ...ord,
             paymentMethod: method,
@@ -454,6 +491,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cancelOrder = (orderId: string, reason?: string) => {
+    const target = orders.find((order) => order.id === orderId);
+    if (!target || target.orderStatus === 'cancelled' || (target.paymentStatus === 'paid' && currentUser.role === 'cashier')) return;
+    if (pendingPaymentOrder?.id === orderId) setPendingPaymentOrder(null);
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id === orderId) {
@@ -503,7 +543,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : customerName || `Ticket #${heldOrders.length + 1}`;
 
     const newHeld: HeldOrder = {
-      id: `held-${Date.now()}`,
+      id: `held-${newId()}`,
       label: label || defaultLabel,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       cart: [...cart],
@@ -846,21 +886,6 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const login = (pin: string): { success: boolean; user?: User; message?: string } => {
-    // 0000 is master cashier login requested by user
-    if (pin === '0000') {
-      const cashier = users.find((u) => u.pin === '0000' || u.role === 'cashier') || users[0];
-      setCurrentUser(cashier);
-      setIsAuthenticated(true);
-      sessionStorage.setItem('pos_is_authenticated', 'true');
-      sessionStorage.setItem('pos_current_user_id', cashier.id);
-      addNotification({
-        title: 'Cashier Signed In',
-        message: `Welcome, ${cashier.name}! Terminal unlocked.`,
-        type: 'success',
-      });
-      return { success: true, user: cashier };
-    }
-
     const matchedUser = users.find((u) => u.pin === pin && u.status === 'active');
     if (matchedUser) {
       setCurrentUser(matchedUser);
@@ -877,7 +902,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: false,
-      message: 'Invalid PIN. Please enter 0000 to sign in.',
+      message: 'Invalid PIN. Try again.',
     };
   };
 
@@ -1034,7 +1059,6 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         login,
         logout,
         currentUser,
-        setCurrentUser,
         users,
         addUser,
         updateUser,
@@ -1070,6 +1094,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeFromCart,
         updateCartQuantity,
         updateItemNotes,
+        replaceCartLine,
         clearCart,
         subtotal,
         discountAmount,
@@ -1081,6 +1106,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pendingPaymentOrder,
         completePendingPayment,
         updateOrderStatus,
+        advanceKitchenStation,
         updatePaymentStatus,
         cancelOrder,
         recallOrderToCart,

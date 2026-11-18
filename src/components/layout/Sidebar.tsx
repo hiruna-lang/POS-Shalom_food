@@ -1,130 +1,38 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  ClipboardList,
-  Utensils,
-  BarChart3,
-  Settings,
-  HelpCircle
-} from 'lucide-react';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, ShoppingCart, Utensils, ChefHat, ClipboardList, ChartNoAxesColumn, Users, Settings, Lock, PanelLeft } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 
-export const Sidebar: React.FC = () => {
-  const { cart, orders } = usePos();
-
-  const pendingOrdersCount = orders.filter(
-    (o) => o.orderStatus === 'pending' || o.orderStatus === 'in_kitchen'
-  ).length;
-
-  const navItems = [
-    {
-      to: '/',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: null,
-    },
-    {
-      to: '/pos',
-      label: 'POS / Billing',
-      icon: ShoppingCart,
-      badge: cart.length > 0 ? `${cart.length}` : null,
-      badgeColor: 'bg-blue-500 text-white',
-    },
-    {
-      to: '/orders',
-      label: 'Orders',
-      icon: ClipboardList,
-      badge: pendingOrdersCount > 0 ? `${pendingOrdersCount}` : null,
-      badgeColor: 'bg-amber-500 text-white',
-    },
-    {
-      to: '/menu',
-      label: 'Menu Management',
-      icon: Utensils,
-      badge: null,
-    },
-    {
-      to: '/reports',
-      label: 'Reports',
-      icon: BarChart3,
-      badge: null,
-    },
-    {
-      to: '/settings',
-      label: 'Settings',
-      icon: Settings,
-      badge: null,
-    },
+export function Sidebar() {
+  const location = useLocation();
+  const [expanded, setExpanded] = useState(false);
+  const { currentUser, logout } = usePos();
+  const management = currentUser.role !== 'cashier';
+  const admin = currentUser.role === 'admin';
+  const items = [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard, visible: true },
+    { to: '/pos', label: 'POS / Billing', icon: ShoppingCart, visible: true },
+    { to: '/menu', label: 'Menu Management', icon: Utensils, visible: management },
+    { to: '/orders?view=kds', label: 'Kitchen Display', icon: ChefHat, visible: true },
+    { to: '/orders', label: 'Orders', icon: ClipboardList, visible: true },
+    { to: '/reports', label: 'Reports & Sales', icon: ChartNoAxesColumn, visible: management },
+    { to: '/staff', label: 'Staff & Cashiers', icon: Users, visible: admin },
+    { to: '/settings', label: 'System Settings', icon: Settings, visible: admin },
   ];
 
   return (
-    <aside className="w-20 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 select-none shadow-lg">
-      <div className="py-4 px-2 md:px-3 space-y-1.5">
-        <div className="hidden md:block px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-          Main Navigation
-        </div>
-
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                `flex items-center justify-between px-3 py-3 rounded-xl font-medium transition-all group relative ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-                }`
-              }
-            >
-              <div className="flex items-center space-x-3 w-full justify-center md:justify-start">
-                <Icon className="w-5 h-5 shrink-0 transition-transform group-hover:scale-110" />
-                <span className="hidden md:inline-block text-sm tracking-wide">
-                  {item.label}
-                </span>
-              </div>
-
-              {/* Badges */}
-              {item.badge && (
-                <span
-                  className={`hidden md:inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full ${
-                    item.badgeColor || 'bg-slate-700 text-slate-200'
-                  }`}
-                >
-                  {item.badge}
-                </span>
-              )}
-
-              {/* Mobile badge indicator */}
-              {item.badge && (
-                <span className="md:hidden absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-slate-900" />
-              )}
-            </NavLink>
-          );
-        })}
-      </div>
-
-      {/* Bottom helper card / quick info */}
-      <div className="p-3 border-t border-slate-800/80">
-        <div className="hidden md:block bg-slate-800/60 rounded-xl p-3 border border-slate-700/50">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Terminal #01</span>
-            <span className="text-emerald-400 font-semibold">Online</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Cashier Station • LAN Ready
-          </div>
-        </div>
-
-        <div className="md:hidden flex justify-center py-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-        </div>
-      </div>
-    </aside>
+    <nav className="workspace-nav" data-expanded={expanded} aria-label="Main navigation">
+      <button type="button" className="nav-toggle" title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+        <PanelLeft size={20} /><span>Navigation</span>
+      </button>
+      {items.filter((item) => item.visible).map(({ to, icon: Icon, label }) => (
+        <Link key={to} to={to} data-active={to === location.pathname + (location.search === '?view=kds' ? location.search : '')} aria-current={to === location.pathname + (location.search === '?view=kds' ? location.search : '') ? 'page' : undefined} title={label} aria-label={label} onClick={() => setExpanded(false)}>
+          <Icon size={20} /><span>{label}</span>
+        </Link>
+      ))}
+      <button type="button" className="nav-lock" title="Lock POS" aria-label="Lock POS" onClick={logout}>
+        <Lock size={20} /><span>Lock POS</span>
+      </button>
+    </nav>
   );
-};
-
+}

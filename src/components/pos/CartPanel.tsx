@@ -72,7 +72,11 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
   useEffect(() => {
     const prior = previousLines.current;
     previousLines.current = cart;
-    if (prior === cart || !animations || reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prior === cart) return;
+    const changed = cart.filter(line => !prior.includes(line));
+    const latest = changed[changed.length - 1];
+    if (latest) lineElements.current.get(latest.lineId ?? latest.menuItem.id)?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    if (!animations || reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     cart.forEach((line) => {
       if (prior.includes(line)) return;
       lineElements.current.get(line.lineId ?? line.menuItem.id)?.animate(
@@ -119,7 +123,7 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
   return (
     <div className="cart-content">
       {/* 1. Order Type Selection Tabs */}
-      <div className="px-3 py-2 border-b border-slate-200">
+      <div className="cart-order-controls px-3 py-2 border-b border-slate-200">
         <div className="flex min-h-11 items-center justify-between gap-2 text-sm">
           <strong className="text-slate-600">{pendingPaymentOrder?.orderNumber ?? `Order #${1001 + orders.length}`}</strong>
           {orderType === 'dine_in' && <button type="button" className="secondary-action" onClick={() => setShowTables(true)}>{selectedTable ? `Table ${selectedTable.number}` : 'Select table'}</button>}
@@ -182,7 +186,7 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
       </div>
 
       {/* 2. Cart Items List */}
-      <div className="cart-orders px-3">
+      <div className="cart-orders px-3" role="region" aria-label="Foods in current bill" tabIndex={0}>
         {cart.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 py-3">
             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3">
@@ -202,13 +206,13 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
                 else lineElements.current.delete(id);
               }}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
+                  <div className="min-w-0 cart-line-description">
                     <h3 className="text-sm font-bold">{item.menuItem.name}</h3>
                     <p className="text-xs text-slate-600">{item.portion && `${item.portion} / `}{formatLkr(item.menuItem.price)} each</p>
                   </div>
                   <strong className="shrink-0 text-sm tabular-nums">{formatLkr(Math.round(item.menuItem.price * 100) * item.quantity / 100)}</strong>
                 </div>
-                <div className="mt-1 flex items-center gap-1">
+                <div className="cart-line-controls mt-1 flex items-center gap-1">
                   <button type="button" className="secondary-action" aria-label={`Edit ${item.menuItem.name}`} onClick={() => onEdit(item)}><Edit3 size={15} /></button>
                   <button type="button" className="secondary-action text-rose-600" aria-label={`Remove ${item.menuItem.name}`} onClick={() => removeFromCart(id)}><Trash2 size={15} /></button>
                   <div className="ml-auto flex items-center gap-1">
@@ -225,7 +229,10 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
       </div>
 
       {/* 3. Financial Totals & Discounts */}
-      <div className="cart-billing space-y-2">
+      <div className="cart-billing">
+        <details className="cart-bill-details">
+          <summary>Bill details <span>{formatLkr(subtotal)} subtotal</span></summary>
+          <div className="cart-bill-breakdown">
         {/* Overall Order Note toggle */}
         <div className="flex items-center justify-between text-xs">
           <input
@@ -320,82 +327,36 @@ export const CartPanel: React.FC<{ onEdit: (item: CartItem) => void }> = ({ onEd
             </div>
           )}
 
-          {/* Grand Total */}
-          <div className="flex justify-between items-baseline pt-2 border-t border-slate-300 text-slate-900">
-            <span className="text-sm font-extrabold uppercase">Total Amount</span>
-            <span className="text-xl font-black text-blue-700">
-              Rs. {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
+        </div>
           </div>
+        </details>
+        <div className="cart-visible-total">
+          <strong>Current bill total</strong>
+          <strong>{formatLkr(grandTotal)}</strong>
         </div>
       </div>
 
-      {/* 4. Action Buttons (KOT, Print Bill, Pay Now, Clear) */}
-      <div className="cart-actions p-3 bg-white border-t border-slate-200 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          {/* Send KOT Button */}
-          <button
-            type="button"
-            disabled={cart.length === 0 || !!pendingPaymentOrder}
-            onClick={handleSendToKitchen}
-            className="flex items-center justify-center space-x-1.5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <ChefHat className="w-4 h-4" />
-            <span>Send KOT</span>
+      {/* Compact fixed controls reserve most of the panel for food items. */}
+      <div className="cart-actions">
+        {pendingPaymentOrder && <div className="cart-pending-note">
+          Pending: {pendingPaymentOrder.orderNumber} <strong>{formatLkr(paymentTotal)}</strong>
+        </div>}
+        <div className="cart-primary-actions">
+          <button type="button" className="secondary-action cart-kot-action" disabled={cart.length === 0 || !!pendingPaymentOrder} onClick={handleSendToKitchen}>
+            <ChefHat size={16} /><span>Send KOT</span>
           </button>
-
-          {/* Print Customer Bill Button */}
-          <button
-            type="button"
-            disabled={!lastReceipt}
-            onClick={() => setShowReceiptModal(true)}
-            className="flex items-center justify-center space-x-1.5 py-3 rounded-xl bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-bold text-xs shadow-md transition-all disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Print receipt</span>
+          <button type="button" className="secondary-action" disabled={!lastReceipt} onClick={() => setShowReceiptModal(true)}>
+            <Printer size={16} /><span>Receipt</span>
+          </button>
+          <button type="button" className="primary-action cart-pay-action" disabled={!pendingPaymentOrder && cart.length === 0} onClick={() => setShowPaymentModal(true)}>
+            <CreditCard size={17} /><span>{pendingPaymentOrder ? 'Pay pending' : 'Pay now'}</span>
           </button>
         </div>
-
-        {/* Primary Payment Button */}
-        <button
-          type="button"
-          disabled={cart.length === 0 || !!pendingPaymentOrder}
-          onClick={() => setShowPaymentModal(true)}
-          className="w-full flex items-center justify-center space-x-2 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-extrabold text-sm shadow-lg shadow-blue-600/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
-        >
-          <CreditCard className="w-5 h-5" />
-          <span>Pay Now ({formatLkr(grandTotal)})</span>
-        </button>
-
-        {pendingPaymentOrder && (
-          <button
-            type="button"
-            onClick={() => setShowPaymentModal(true)}
-            className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition-all"
-          >
-            <CreditCard className="w-5 h-5" />
-            <span>Pay Pending Order ({formatLkr(paymentTotal)})</span>
-          </button>
-        )}
-
-        <div className="flex gap-2">
+        <div className="cart-secondary-actions">
           <button type="button" className="secondary-action" disabled={!cart.length} onClick={() => holdCurrentOrder()}><PauseCircle size={16} /> Hold</button>
           <button type="button" className="secondary-action" disabled={!heldOrders.length} onClick={() => setShowHeldModal(true)}><PlayCircle size={16} /> Held ({heldOrders.length})</button>
+          <button type="button" className="secondary-action cart-clear-action" disabled={!cart.length} onClick={() => setShowClearConfirm(true)}><Trash2 size={15} /> Clear</button>
         </div>
-        {cart.length > 0 && (
-          <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowClearConfirm(true)}
-              className="text-xs text-rose-500 hover:text-rose-700 font-semibold"
-            >
-              Clear Cart
-            </button>
-            <span className="text-[11px] text-slate-400">
-              {cart.reduce((s, i) => s + i.quantity, 0)} items in bill
-            </span>
-          </div>
-        )}
       </div>
 
       <Modal isOpen={showHeldModal} onClose={() => setShowHeldModal(false)} title="Held orders">

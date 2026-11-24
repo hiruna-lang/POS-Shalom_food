@@ -151,7 +151,15 @@ function newId() {
 function readTerminalState<T>(key: string, fallback: T): T {
   try {
     const stored = localStorage.getItem(`shalom-pos-v1:${key}`);
-    return stored === null ? fallback : JSON.parse(stored) as T;
+    if (stored === null) return fallback;
+    const parsed = JSON.parse(stored);
+    // Populate existing terminals too, without replacing a custom business address.
+    if (key === 'settings' && parsed?.general &&
+      (!parsed.general.address?.trim() || parsed.general.address === 'No. 320, Galle Road, Kollupitiya, Colombo 03, Sri Lanka')) {
+      parsed.general.address = INITIAL_SETTINGS.general.address;
+      if (parsed.general.branchName === 'Kollupitiya Main Flagship') parsed.general.branchName = '';
+    }
+    return parsed as T;
   } catch {
     return fallback;
   }

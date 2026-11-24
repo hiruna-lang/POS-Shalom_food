@@ -573,12 +573,12 @@ export const INITIAL_USERS: User[] = [
 
 export const INITIAL_SETTINGS: AppSettings = {
   general: {
-    restaurantName: 'Shalom Food Restaurant',
-    branchName: 'Kollupitiya Main Flagship',
-    logo: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=120&auto=format&fit=crop&q=80',
-    address: 'No. 320, Galle Road, Kollupitiya, Colombo 03, Sri Lanka',
-    phone: '+94 11 257 8899 / +94 77 712 3456',
-    email: 'contact@shalomfood.lk',
+    restaurantName: 'Shalom Food',
+    branchName: '',
+    logo: '/shalom-receipt-mark.svg',
+    address: 'Gothatuwa New Town Junction, Sri Lanka',
+    phone: '',
+    email: '',
     currency: 'Sri Lankan Rupee (LKR)',
     currencySymbol: 'Rs.',
     taxRate: 2.5, // 2.5% SSCL

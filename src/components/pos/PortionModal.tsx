@@ -19,17 +19,18 @@ export function PortionModal({ item, line, onClose, onConfirm }: {
   const [saving, setSaving] = useState(false);
 
   return (
-    <Modal isOpen onClose={onClose} title={item.name} maxWidth="md">
-      <form className="space-y-4" onSubmit={(event) => {
+    <Modal isOpen onClose={onClose} title={item.name} maxWidth="md" compact>
+      <form className="portion-form" onSubmit={(event) => {
         event.preventDefault();
         if (saving || !item.isAvailable || !portion) return;
         setSaving(true);
         onConfirm(quantity, notes, portion.name);
       }}>
-        {item.image && <img src={item.image} alt="" className="h-28 w-full rounded-xl bg-slate-100 object-cover" />}
+        <div className="portion-form-content">
+        {item.image && <img src={item.image} alt="" className="portion-preview w-full rounded-xl bg-slate-100 object-cover" />}
         <fieldset>
           <legend className="mb-2 text-sm font-bold">Portion size</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2">
             {portions.map((option) => (
               <label className="portion-option" key={option.name}>
                 <input className="sr-only" type="radio" name="portion" checked={option.name === portion?.name} onChange={() => setPortion(option)} />
@@ -48,9 +49,10 @@ export function PortionModal({ item, line, onClose, onConfirm }: {
           </div>
         </div>
         <label className="block text-sm font-bold">Kitchen instructions
-          <textarea className="mt-1 block w-full rounded-xl border p-3 font-normal" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
+          <textarea className="portion-notes mt-1 block w-full rounded-xl border p-2 font-normal" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
         </label>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+        </div>
+        <div className="portion-form-footer">
           <strong className="tabular-nums">{portion ? formatLkr(Math.round(portion.price * 100) * quantity / 100) : 'Select a size'}</strong>
           <div className="flex gap-2">
             <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>

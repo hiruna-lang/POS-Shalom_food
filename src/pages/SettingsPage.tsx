@@ -279,6 +279,12 @@ export const SettingsPage: React.FC<{ initialTab?: 'users' }> = ({ initialTab })
               </div>
 
               <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1" htmlFor="receipt-logo">Receipt logo URL (optional)</label>
+                <input id="receipt-logo" type="text" value={generalForm.logo} onChange={(e) => setGeneralForm({ ...generalForm, logo: e.target.value })} placeholder="/shalom-receipt-mark.svg" className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl" />
+                <p className="mt-1 text-xs text-slate-500">Use your own logo, or leave blank for the Shalom Food receipt emblem.</p>
+              </div>
+
+              <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Physical Street Address
                 </label>

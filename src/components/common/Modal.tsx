@@ -8,6 +8,7 @@ interface ModalProps {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  compact?: boolean;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 }
 
@@ -18,6 +19,7 @@ export const Modal: React.FC<ModalProps> = ({
   subtitle,
   children,
   maxWidth = 'lg',
+  compact = false,
 }) => {
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -80,7 +82,7 @@ export const Modal: React.FC<ModalProps> = ({
           aria-modal="true"
           aria-labelledby={titleId}
           tabIndex={-1}
-          className={`modal-surface relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthClass} border border-slate-200 animate-in fade-in zoom-in-95 duration-150`}
+          className={`modal-surface ${compact ? 'item-modal' : ''} relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthClass} border border-slate-200 animate-in fade-in zoom-in-95 duration-150`}
         >
           {/* Header */}
           <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -99,7 +101,7 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
 
           {/* Body */}
-          <div className="p-6 max-h-[calc(85vh-8rem)] overflow-y-auto">{children}</div>
+          <div className={compact ? "item-modal-body" : "p-6 max-h-[calc(85vh-8rem)] overflow-y-auto"}>{children}</div>
         </div>
       </div>
     </div>, document.body,
